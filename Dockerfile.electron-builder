@@ -1,0 +1,30 @@
+# Stage 1: Build Go binary
+FROM golang:1.24-alpine AS gobuilder
+
+# hadolint ignore=DL3018
+RUN apk add --no-cache git
+WORKDIR /src
+ARG BUILD_COMMIT_DATE=
+COPY go.mod go.sum* ./
+RUN go mod download 2>/dev/null || true
+COPY . .
+RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X agentdeck/internal/buildinfo.CommitDate=${BUILD_COMMIT_DATE}" -o /agentdeck ./cmd/agentdeck
+
+# Stage 2: Package Electron app
+FROM node:20-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libarchive-tools rpm fakeroot \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+COPY electron/package.json electron/main.js electron/preload.js ./
+COPY --from=gobuilder /agentdeck ./agentdeck
+RUN chmod +x ./agentdeck
+
+RUN npm install
+RUN npx electron-builder --linux AppImage --x64 \
+    --config.directories.output=/out
+
+CMD ["sh", "-c", "find /dist -maxdepth 1 -name '*.AppImage' -delete 2>/dev/null || true; cp /out/*.AppImage /dist/"]

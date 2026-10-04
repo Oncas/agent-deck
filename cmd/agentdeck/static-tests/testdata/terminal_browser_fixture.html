@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../static/vendor/xterm/xterm.css">
+    <style>
+        html, body { margin: 0; background: #111; }
+        #terminal { width: 760px; height: 360px; }
+    </style>
+</head>
+<body>
+    <div id="terminal"></div>
+    <script src="../../static/vendor/xterm/xterm.js"></script>
+    <script src="../../static/vendor/xterm-addons/addon-fit.js"></script>
+    <script src="../../static/vendor/xterm-addons/addon-unicode-graphemes.js"></script>
+    <script src="../../static/terminal_transport.js"></script>
+    <script>
+        class FixtureSocket {
+            static instances = [];
+
+            constructor(url) {
+                this.url = url;
+                this.readyState = WebSocket.CONNECTING;
+                this.sent = [];
+                FixtureSocket.instances.push(this);
+            }
+
+            open() {
+                this.readyState = WebSocket.OPEN;
+                this.onopen?.({});
+            }
+
+            message(data) {
+                this.onmessage?.({ data });
+            }
+
+            send(data) {
+                this.sent.push(data);
+            }
+
+            close(code = 1000, reason = '') {
+                if (this.readyState === WebSocket.CLOSED) return;
+                this.readyState = WebSocket.CLOSED;
+                this.onclose?.({ code, reason });
+            }
+        }
+
+        const encoder = new TextEncoder();
+
+        function check(condition, message) {
+            if (!condition) throw new Error(message);
+        }
+
+        function bufferTailText(buffer, maxLines = 256) {
+            const lines = [];
+            const start = Math.max(0, buffer.length - maxLines);
+            for (let index = start; index < buffer.length; index++) {
+                lines.push(buffer.getLine(index)?.translateToString(true) || '');
+            }
+            return lines.join('\n');
+        }
+
+        function sendText(socket, text, frameSize = 64 * 1024) {
+            const bytes = encoder.encode(text);
+            for (let offset = 0; offset < bytes.byteLength; offset += frameSize) {
+                socket.message(bytes.slice(offset, offset + frameSize).buffer);
+            }
+            return bytes.byteLength;
+        }
+
+        function jsonMessages(socket, type) {
+            return socket.sent
+                .filter(value => typeof value === 'string')
+                .map(value => JSON.parse(value))
+                .filter(value => !type || value.type === type);
+        }
+
+        function nextFrames(count = 2) {
+            return new Promise(resolve => {
+                const step = () => {
+                    if (--count <= 0) resolve();
+                    else requestAnimationFrame(step);
+                };
+                requestAnimationFrame(step);
+            });
+        }
+
+        async function waitFor(predicate, message, timeoutMs = 5000) {
+            const deadline = performance.now() + timeoutMs;
+            while (!predicate()) {
+                if (performance.now() >= deadline) throw new Error(message);
+                await new Promise(resolve => setTimeout(resolve, 5));
+            }
+        }
+
+        function scrollElement(term) {
+            return term.element.querySelector('.xterm-scrollable-element > .scrollbar.vertical');
+        }
+
+        function atDomBottom(element) {
+            const slider = element?.querySelector('.slider');
+            if (!slider) return false;
+            const top = Number.parseFloat(slider.style.top) || 0;
+            const height = Number.parseFloat(slider.style.height) || slider.clientHeight;
+            return Math.abs(top + height - element.clientHeight) <= 2;
+        }
+
+        window.runTerminalBrowserTests = async function runTerminalBrowserTests() {
+            const host = document.getElementById('terminal');
+            const term = new Terminal({
+                scrollback: 20000,
+                fontSize: 13,
+                scrollOnUserInput: true,
+                allowProposedApi: true,
+            });
+            const fitAddon = new FitAddon.FitAddon();
+            const unicodeAddon = new UnicodeGraphemesAddon.UnicodeGraphemesAddon();
+            term.loadAddon(fitAddon);
+            term.loadAddon(unicodeAddon);
+            term.unicode.activeVersion = '15';
+            term.open(host);
+            fitAddon.fit();
+
+            const connection = TerminalTransport.createTerminalConnection({
+                term,
+                baseUrl: 'ws://terminal.test/ws/project',
+                socketFactory: url => new FixtureSocket(url),
+                reconnectInitialMs: 5,
+                reconnectMaxMs: 5,
+            });
+            const first = FixtureSocket.instances[0];
+            check(new URL(first.url).searchParams.get('protocol') === '2', 'transport did not negotiate parser acknowledgements');
+            first.open();
+            first.message('{"type":"terminal-sync","cursor":0,"reset":true}');
+
+            let burst = '';
+            for (let index = 0; index < 9000; index++) {
+                burst += `${String(index).padStart(5, '0')} ${'x'.repeat(52)}\r\n`;
+            }
+            burst += 'FIRST-TAIL-MARKER\r\n';
+            const firstBytes = sendText(first, burst);
+            await connection.whenIdle();
+            await nextFrames();
+
+            check(firstBytes > 512 * 1024, 'fixture output did not exceed the flow-control window');
+            check(connection.appliedCursor === firstBytes, 'applied cursor stopped before the full burst');
+            check(bufferTailText(term.buffer.normal).includes('FIRST-TAIL-MARKER'), 'xterm lost the end of the output burst');
+            check(term.buffer.active.viewportY === term.buffer.active.baseY, 'xterm viewport did not follow live output');
+            const viewport = scrollElement(term);
+            check(viewport, 'xterm scroll element was not created');
+            check(atDomBottom(viewport), 'DOM scrollbar disagrees with xterm at the output tail');
+            check(jsonMessages(first, 'ack').at(-1)?.cursor === firstBytes, 'transport acknowledged bytes before the renderer applied them');
+
+            term.scrollLines(-1000);
+            await nextFrames();
+            check(term.buffer.active.viewportY < term.buffer.active.baseY, 'could not scroll away from the terminal tail');
+            check(
+                !atDomBottom(viewport),
+                `DOM scrollbar stayed at the tail after scrolling up (buffer ${term.buffer.active.viewportY}/${term.buffer.active.baseY}; ${viewport.outerHTML})`,
+            );
+            const secondBytes = sendText(first, 'SCROLLED-OUTPUT\r\n'.repeat(40) + 'SECOND-TAIL-MARKER\r\n');
+            await connection.whenIdle();
+            await nextFrames();
+            check(term.buffer.active.viewportY < term.buffer.active.baseY, 'background output stole a deliberately scrolled viewport');
+
+            term.input('x', true);
+            await nextFrames();
+            check(term.buffer.active.viewportY === term.buffer.active.baseY, 'user input did not return the viewport to the tail');
+            check(atDomBottom(viewport), 'DOM scrollbar did not return to the tail on user input');
+
+            sendText(first, '\x1b[?1049h\x1b[2J\x1b[HALTERNATE-MARKER\r\n', 5);
+            await connection.whenIdle();
+            check(term.buffer.active.type === 'alternate', 'alternate-screen enter sequence was altered');
+            check(bufferTailText(term.buffer.active).includes('ALTERNATE-MARKER'), 'alternate-screen output was filtered');
+            sendText(first, '\x1b[?1049lAFTER-ALTERNATE\r\n', 4);
+            await connection.whenIdle();
+            check(term.buffer.active.type === 'normal', 'alternate-screen leave sequence was altered');
+            check(bufferTailText(term.buffer.normal).includes('AFTER-ALTERNATE'), 'normal output after alternate screen was lost');
+
+            sendText(first, '\x1b[2J\x1b[HPOST-CLEAR-MARKER\r\n');
+            await connection.whenIdle();
+            await nextFrames();
+            check(bufferTailText(term.buffer.active).includes('POST-CLEAR-MARKER'), 'clear-screen output did not render');
+
+            host.style.display = 'none';
+            await nextFrames();
+            host.style.display = 'block';
+            host.style.width = '640px';
+            await nextFrames();
+            fitAddon.fit();
+            term.refresh(0, term.rows - 1);
+            term.scrollToBottom();
+            await nextFrames();
+            check(term.cols > 0 && term.rows > 0, 'terminal did not recover dimensions after being shown');
+            check(atDomBottom(viewport), 'show/fit left the scrollbar short of the tail');
+
+            const reconnectText = 'RECONNECT-BURST\r\n'.repeat(1000) + 'RECONNECT-TAIL\r\n';
+            const reconnectBytes = sendText(first, reconnectText);
+            first.close(1013, 'slow consumer');
+            await waitFor(() => FixtureSocket.instances.length === 2, 'transport did not reconnect after queued writes drained');
+            const second = FixtureSocket.instances[1];
+            const reconnectCursor = firstBytes + secondBytes
+                + encoder.encode('\x1b[?1049h\x1b[2J\x1b[HALTERNATE-MARKER\r\n').byteLength
+                + encoder.encode('\x1b[?1049lAFTER-ALTERNATE\r\n').byteLength
+                + encoder.encode('\x1b[2J\x1b[HPOST-CLEAR-MARKER\r\n').byteLength
+                + reconnectBytes;
+            check(Number(new URL(second.url).searchParams.get('cursor')) === reconnectCursor, 'reconnect cursor described socket receipt instead of parsed output');
+            second.open();
+            second.message(JSON.stringify({ type: 'terminal-sync', cursor: reconnectCursor }));
+            sendText(second, 'FINAL-TAIL-MARKER\r\n');
+            await connection.whenIdle();
+            term.scrollToBottom();
+            await nextFrames();
+            check(bufferTailText(term.buffer.active).includes('FINAL-TAIL-MARKER'), 'output after reconnect was lost');
+            check(atDomBottom(viewport), 'reconnected terminal could not scroll to the final output');
+
+            const result = {
+                firstBytes,
+                finalCursor: connection.appliedCursor,
+                cols: term.cols,
+                rows: term.rows,
+            };
+            connection.close();
+            term.dispose();
+            return result;
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+{
+  "name": "agentdeck",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --linux AppImage",
+    "dist:mac": "../scripts/electron-package-mac.sh --no-open",
+    "sync:xterm": "cp node_modules/@xterm/xterm/lib/xterm.js ../cmd/agentdeck/static/vendor/xterm/xterm.js && cp node_modules/@xterm/xterm/css/xterm.css ../cmd/agentdeck/static/vendor/xterm/xterm.css && cp node_modules/@xterm/addon-fit/lib/addon-fit.js ../cmd/agentdeck/static/vendor/xterm-addons/addon-fit.js && cp node_modules/@xterm/addon-unicode-graphemes/lib/addon-unicode-graphemes.js ../cmd/agentdeck/static/vendor/xterm-addons/addon-unicode-graphemes.js"
+  },
+  "devDependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-unicode-graphemes": "0.4.0",
+    "@xterm/xterm": "6.0.0",
+    "electron": "34.5.8",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.agentdeck.app",
+    "productName": "Agent Deck",
+    "linux": {
+      "target": "AppImage",
+      "category": "Development"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.developer-tools"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "agentdeck",
+      "node_modules/monaco-editor/min/**",
+      "node_modules/sql-formatter/**",
+      "node_modules/argparse/**",
+      "node_modules/nearley/**",
+      "node_modules/commander/**",
+      "node_modules/moo/**",
+      "node_modules/railroad-diagrams/**",
+      "node_modules/randexp/**",
+      "node_modules/discontinuous-range/**",
+      "node_modules/ret/**"
+    ],
+    "extraResources": [],
+    "asar": false
+  },
+  "dependencies": {
+    "monaco-editor": "0.50.0",
+    "sql-formatter": "15.8.1"
+  }
+}

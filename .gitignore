@@ -1,0 +1,13 @@
+dist/
+out/
+config.json
+databases.json
+saved-queries/
+electron/node_modules/
+electron/agentdeck
+electron/electron-v*.zip
+electron/dist/
+*.AppImage
+/agentdeck
+resume.json
+.agentdeck/

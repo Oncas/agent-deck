@@ -1,0 +1,52 @@
+services:
+  builder:
+    image: agentdeck-builder
+    build:
+      context: .
+      network: host
+    network_mode: none
+    entrypoint: ["/agentdeck"]
+    command: ["--version"]
+
+  dev:
+    image: golang:1.24-alpine
+    network_mode: host
+    volumes:
+      - .:/src
+      - gomod-cache:/go/pkg/mod
+      - gobuild-cache:/root/.cache/go-build
+    working_dir: /src
+    entrypoint: ["sh", "-c"]
+    command: ["echo 'dev shell ready'"]
+
+  electron:
+    build:
+      context: .
+      dockerfile: Dockerfile.electron
+      network: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - LIBGL_ALWAYS_SOFTWARE=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+      - ./config.json:/app/config.json
+      # Set AGENTDECK_PROJECTS_ROOT to mount your host projects into Electron.
+      - ${AGENTDECK_PROJECTS_ROOT:-.}:${AGENTDECK_PROJECTS_ROOT:-/workspace/projects}
+    devices:
+      - /dev/dri:/dev/dri
+    network_mode: host
+    ipc: host
+
+  electron-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.electron-builder
+      network: host
+    network_mode: none
+    volumes:
+      - ./dist:/dist
+
+volumes:
+  gomod-cache:
+  gobuild-cache:

@@ -1,0 +1,14 @@
+agentdeck
+out/
+.claude/
+.git/
+electron/node_modules/
+electron/dist/
+dist/
+config.json
+databases.json
+saved-queries/
+resume.json
+.agentdeck/
+electron/agentdeck
+*.AppImage

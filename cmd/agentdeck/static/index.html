@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'">
+    <title>Agent Deck</title>
+    <link rel="stylesheet" href="/style.css">
+    <script>
+        (function(){
+            var m = localStorage.getItem('theme-mode') || 'dark';
+            var t = m === 'auto' ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : m;
+            document.documentElement.setAttribute('data-theme', t);
+            try {
+                var css = JSON.parse(localStorage.getItem('theme-css-' + t) || '{}');
+                Object.keys(css).forEach(function(k){
+                    if (k.indexOf('--') === 0) document.documentElement.style.setProperty(k, css[k]);
+                });
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="stylesheet" href="/vendor/xterm/xterm.css">
+</head>
+<body>
+    <div id="window-titlebar" class="window-titlebar" style="display:none">
+        <div id="window-drag-region">
+            <span id="window-title">Agent Deck</span>
+        </div>
+        <div id="window-controls">
+            <button id="window-min-btn" class="window-control-btn" type="button" aria-label="Minimize window" title="Minimize">
+                <span data-icon="minus"></span>
+            </button>
+            <button id="window-max-btn" class="window-control-btn" type="button" aria-label="Maximize window" title="Maximize">
+                <span data-icon="maximize"></span>
+            </button>
+            <button id="window-close-btn" class="window-control-btn close" type="button" aria-label="Close window" title="Close">
+                <span data-icon="x"></span>
+            </button>
+        </div>
+    </div>
+    <div id="setup-overlay" style="display:none">
+        <div id="setup-box">
+            <h2>Agent Deck Setup</h2>
+            <p class="setup-copy">Select the services directory that contains your project repositories.</p>
+            <p class="setup-note">Repositories inside this folder will be scanned automatically.</p>
+            <div class="setup-path-row">
+                <input type="text" id="setup-dir" placeholder="/home/user/projects">
+                <button id="setup-dir-select-btn" class="path-select-btn" type="button" title="Select services directory">
+                    <span data-icon="folder-open"></span>
+                    <span>Select</span>
+                </button>
+            </div>
+            <button type="button" onclick="saveSetup()">Save</button>
+        </div>
+    </div>
+
+    <div id="app">
+        <div id="sidebar">
+            <div id="sidebar-header">
+                <span id="sidebar-title">Projects</span>
+                <div id="sidebar-header-actions">
+                    <span id="sleep-blocker-indicator" data-icon="coffee" style="display:none"></span>
+                    <span id="rescan-projects-btn" data-icon="rotate-cw" title="Rescan projects"></span>
+                    <span id="settings-btn" data-icon="settings" title="Settings"></span>
+                </div>
+            </div>
+            <div id="mode-switcher">
+                <button id="overview-btn" class="mode-btn" type="button" title="Overview (Ctrl+Shift+O)">Overview</button>
+                <button id="jobs-btn" class="mode-btn" type="button" title="Jobs (Ctrl+Shift+J)">Jobs</button>
+                <button id="database-btn" class="mode-btn" type="button" title="Database">Database</button>
+            </div>
+            <div id="project-sidebar-body">
+                <div id="sidebar-search">
+                    <input type="text" id="search-input" placeholder="Filter projects..." autocomplete="off">
+                </div>
+                <div id="project-list"></div>
+            </div>
+            <div id="database-sidebar" style="display:none">
+                <div id="database-connection-tree"></div>
+            </div>
+        </div>
+
+        <button id="sidebar-collapse-btn" class="sidebar-collapse-btn" type="button" data-icon="chevron-left" data-tooltip="Ctrl+[ · drag to resize" aria-label="Collapse project sidebar; drag to resize" aria-expanded="true"></button>
+
+        <div id="main">
+            <div id="overview-view" style="display:none">
+                <div id="overview-header">
+                    <span>Overview</span>
+                    <div id="overview-header-actions">
+                        <span id="overview-pull-all-btn" title="Pull all projects">pull all</span>
+                        <span id="overview-refresh-btn" data-icon="rotate-cw" title="Refresh"></span>
+                    </div>
+                </div>
+                <div id="overview-filters">
+                    <button class="overview-filter active" type="button" data-filter="all">All</button>
+                    <button class="overview-filter" type="button" data-filter="pinned">Pinned</button>
+                    <button class="overview-filter" type="button" data-filter="dirty">Dirty</button>
+                    <button class="overview-filter" type="button" data-filter="behind">Behind</button>
+                    <button class="overview-filter" type="button" data-filter="docker">Docker</button>
+                    <button class="overview-filter" type="button" data-filter="no-session">No session</button>
+                </div>
+                <div id="overview-grid"></div>
+            </div>
+            <div id="jobs-view" style="display:none">
+                <div id="jobs-header">
+                    <span>Jobs</span>
+                    <div id="jobs-header-actions">
+                        <span id="jobs-refresh-btn" data-icon="rotate-cw" title="Refresh jobs"></span>
+                    </div>
+                </div>
+                <div id="jobs-body">
+                    <form id="job-form">
+                        <div class="job-form-row">
+                            <label class="job-field">
+                                <span>Name</span>
+                                <input type="text" id="job-name" placeholder="Daily check">
+                            </label>
+                            <label class="job-field">
+                                <span>Project</span>
+                                <select id="job-project"></select>
+                            </label>
+                            <label class="job-field job-schedule-field">
+                                <span>Cron</span>
+                                <div class="job-schedule-input-row">
+                                    <input type="text" id="job-schedule" placeholder="0 9 * * 1-5">
+                                    <button id="job-schedule-builder-btn" type="button">build</button>
+                                </div>
+                            </label>
+                        </div>
+                        <div id="job-schedule-summary"></div>
+                        <div id="job-schedule-preview-list"></div>
+                        <label class="job-field">
+                            <span>Prompt</span>
+                            <textarea id="job-prompt" rows="4" placeholder="Run the scheduled task..."></textarea>
+                        </label>
+                        <div id="job-form-actions">
+                            <span class="job-enabled-toggle">
+                                <span id="job-enabled-label">Enabled</span>
+                                <label class="settings-switch"><input type="checkbox" id="job-enabled" aria-labelledby="job-enabled-label" checked><span class="settings-switch-track"></span></label>
+                            </span>
+                            <span id="job-form-cancel" style="display:none">cancel</span>
+                            <button id="job-save-btn" type="submit">create job</button>
+                        </div>
+                    </form>
+                    <div id="jobs-list"></div>
+                </div>
+            </div>
+            <div id="database-view" style="display:none">
+                <div id="database-header">
+                    <span id="database-header-title">Database</span>
+                    <div id="database-header-actions">
+                        <button id="database-settings-btn" type="button">Connections</button>
+                        <span id="database-refresh-btn" data-icon="rotate-cw" title="Refresh schema"></span>
+                    </div>
+                </div>
+                <div id="database-body">
+                    <section id="database-workbench">
+                        <div id="database-workbench-tabs">
+                            <button id="database-new-query-tab-btn" type="button">new query</button>
+                            <div id="database-query-tabs"></div>
+                            <div id="database-result-tabs"></div>
+                        </div>
+                        <div id="database-console">
+                            <textarea id="database-query-input" spellcheck="false" placeholder="select * from table_name limit 100"></textarea>
+                            <div id="database-query-editor"></div>
+                            <div id="database-query-actions">
+                                <form id="database-save-query-form" autocomplete="off" style="display:none">
+                                    <input id="database-save-query-name" type="text" placeholder="Query name">
+                                    <button id="database-save-query-confirm" type="submit" title="Save query" aria-label="Save query"><span data-icon="check"></span></button>
+                                    <button id="database-save-query-cancel" type="button" title="Cancel save" aria-label="Cancel save"><span data-icon="x"></span></button>
+                                </form>
+                                <div id="database-query-buttons">
+                                    <button id="database-run-query-btn" type="button" title="Run query" aria-label="Run query"><span data-icon="play"></span></button>
+                                    <button id="database-explain-query-btn" type="button" title="Explain query" aria-label="Explain query"><span data-icon="info"></span></button>
+                                    <button id="database-pretty-query-btn" type="button" title="Prettify SQL" aria-label="Prettify SQL"><span data-icon="sparkles"></span></button>
+                                    <button id="database-save-query-btn" type="button" title="Save query" aria-label="Save query"><span data-icon="save"></span></button>
+                                    <button id="database-export-csv-btn" type="button" title="Export CSV" aria-label="Export CSV"><span data-icon="download"></span></button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="database-results"></div>
+                    </section>
+                </div>
+            </div>
+            <div id="terminal-tabs"></div>
+            <div id="terminal-container"></div>
+            <div id="statusbar">
+                <span id="status-context">No active project</span>
+                <span id="build-info" title="unknown">unknown</span>
+                <button id="command-palette-btn" type="button">Commands</button>
+                <button id="shortcuts-btn" type="button">Shortcuts</button>
+                <span id="status-project"></span>
+            </div>
+        </div>
+
+        <button id="git-panel-collapse-btn" class="sidebar-collapse-btn right" type="button" data-icon="chevron-right" data-tooltip="Ctrl+] · drag to resize" aria-label="Collapse right panel; drag to resize" aria-expanded="true"></button>
+        <div id="git-panel">
+            <aside id="database-inspector">
+                <div id="database-inspector-title">Inspector</div>
+                <div id="database-inspector-body"></div>
+            </aside>
+            <div id="docker-section" style="display:none">
+                <div id="docker-header">
+                    <span><span id="docker-status-dot" class="docker-dot"></span>Docker</span>
+                    <div id="docker-actions">
+                        <span id="docker-compose-name"></span>
+                        <span id="docker-start-btn">start</span>
+                        <span id="docker-stop-btn">stop</span>
+                    </div>
+                </div>
+                <pre id="docker-output"></pre>
+            </div>
+            <div id="github-activity-section" style="display:none">
+                <div id="github-activity-body">
+                    <div class="github-activity-loading">loading...</div>
+                </div>
+                <span id="github-activity-refresh" data-icon="rotate-cw" title="Refresh GitHub activity"></span>
+            </div>
+            <div id="usage-section" class="usage-section" style="display:none">
+                <div id="usage-tabs" class="usage-header" role="tablist" aria-label="AI usage"></div>
+                <div id="usage-body" class="usage-body"></div>
+                <span id="usage-refresh" class="usage-refresh" data-icon="rotate-cw" title="Refresh usage"></span>
+            </div>
+            <div id="git-panel-header">
+                <span>Git Status</span>
+                <div id="git-actions">
+                    <span id="git-editor-btn" title="Open editor">edit</span>
+                    <span id="git-checkout-main-btn" title="Checkout main/master">main</span>
+                    <span id="git-pull-btn" title="Git pull">pull</span>
+                    <span id="git-commit-btn" title="Commit changes">commit</span>
+                    <span id="git-revert-btn" title="Revert all changes">revert</span>
+                </div>
+            </div>
+            <div id="git-content">
+                <div class="git-clean">No project selected</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="agent-picker-modal" style="display:none">
+        <div id="agent-picker-backdrop"></div>
+        <div id="agent-picker-content">
+            <div id="agent-picker-header">
+                <span id="agent-picker-title">Split Tab</span>
+                <span id="agent-picker-close" data-icon="x"></span>
+            </div>
+            <div id="agent-picker-subtitle">Choose the agent for the new pane. Enter accepts the selected provider.</div>
+            <div id="agent-picker-list"></div>
+        </div>
+    </div>
+
+    <div id="job-log-modal" style="display:none">
+        <div id="job-log-backdrop"></div>
+        <div id="job-log-content">
+            <div id="job-log-header">
+                <span id="job-log-title">Job Logs</span>
+                <div id="job-log-actions">
+                    <select id="job-log-run-select" title="Run"></select>
+                    <span id="job-log-response-btn" class="job-log-mode active">terminal</span>
+                    <span id="job-log-terminal-btn" class="job-log-mode">text</span>
+                </div>
+                <span id="job-log-close" data-icon="x"></span>
+            </div>
+            <div id="job-log-terminal"></div>
+        </div>
+    </div>
+
+    <div id="commit-modal" style="display:none">
+        <div id="commit-modal-backdrop"></div>
+        <div id="commit-modal-content">
+            <div id="commit-modal-header">
+                <span>Commit Changes</span>
+                <span id="commit-modal-close" data-icon="x"></span>
+            </div>
+            <div id="commit-modal-body">
+                <div id="commit-files"></div>
+                <div id="commit-msg-row">
+                    <textarea id="commit-msg" placeholder="Commit message..." rows="3"></textarea>
+                </div>
+                <div id="commit-actions">
+                    <span id="commit-select-all">Select All</span>
+                    <button id="commit-btn">Commit</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="cleanup-modal" style="display:none">
+        <div id="cleanup-modal-backdrop"></div>
+        <div id="cleanup-modal-content">
+            <div id="cleanup-modal-header">
+                <span id="cleanup-modal-title">Delete Merged Branches</span>
+                <span id="cleanup-modal-close" data-icon="x"></span>
+            </div>
+            <div id="cleanup-modal-body">
+                <div id="cleanup-modal-list"></div>
+                <div id="cleanup-modal-actions">
+                    <span id="cleanup-select-all">Select All</span>
+                    <button id="cleanup-confirm-btn" class="danger">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="branch-conflict-modal" style="display:none">
+        <div id="branch-conflict-backdrop"></div>
+        <div id="branch-conflict-content">
+            <div id="branch-conflict-header">
+                <span>Branch differs from remote</span>
+                <span id="branch-conflict-close" data-icon="x"></span>
+            </div>
+            <div id="branch-conflict-body">
+                <p id="branch-conflict-text"></p>
+                <div id="branch-conflict-actions">
+                    <button id="branch-conflict-keep">Keep local branch</button>
+                    <button id="branch-conflict-reset" class="danger">Reset to remote</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="branch-dropdown" style="display:none"></div>
+
+    <div id="terminal-context-menu" class="terminal-context-menu" style="display:none"></div>
+    <div id="project-context-menu" class="terminal-context-menu project-context-menu" style="display:none"></div>
+    <div id="database-result-context-menu" class="terminal-context-menu" style="display:none"></div>
+
+    <div id="diff-modal" style="display:none">
+        <div id="diff-modal-backdrop"></div>
+        <div id="diff-modal-content">
+            <div id="diff-modal-header">
+                <div id="diff-modal-nav">
+                    <span id="diff-modal-prev" data-icon="chevron-left" title="Previous file (Left arrow)"></span>
+                    <span id="diff-modal-counter"></span>
+                    <span id="diff-modal-next" data-icon="chevron-right" title="Next file (Right arrow)"></span>
+                </div>
+                <div id="diff-change-nav">
+                    <span id="diff-change-prev" data-icon="chevron-up" title="Previous change (Up arrow)"></span>
+                    <span id="diff-change-counter"></span>
+                    <span id="diff-change-next" data-icon="chevron-down" title="Next change (Down arrow)"></span>
+                </div>
+                <span id="diff-modal-title"></span>
+                <button id="diff-viewed-toggle" type="button" title="Mark file as viewed" aria-pressed="false">mark viewed</button>
+                <span id="diff-view-toggle" title="Toggle side-by-side/inline">inline</span>
+                <span id="diff-tests-toggle" title="Hide test files">hide tests</span>
+                <span id="diff-blame-btn" title="Toggle git blame">blame</span>
+                <span id="diff-save-btn" title="Save file (Ctrl+S)">save</span>
+                <span id="diff-revert-btn" title="Revert this file">revert</span>
+                <span id="diff-modal-close" data-icon="x"></span>
+            </div>
+            <div id="diff-modal-main">
+                <div id="diff-file-sidebar">
+                    <div id="diff-file-list"></div>
+                </div>
+                <span id="diff-file-panel-toggle" class="sidebar-collapse-btn diff-file-panel-toggle" data-icon="chevron-left" data-tooltip="Changed files"></span>
+                <div id="diff-modal-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Editor context menu -->
+    <div id="editor-context-menu" class="editor-context-menu" style="display:none">
+        <div class="editor-context-item" data-action="new-file">New File</div>
+        <div class="editor-context-item" data-action="blame">Blame</div>
+        <div class="editor-context-item" data-action="rename">Rename</div>
+        <div class="editor-context-item editor-context-danger" data-action="delete">Delete</div>
+    </div>
+
+    <div id="editor-modal" style="display:none">
+        <div id="editor-modal-backdrop"></div>
+        <div id="editor-modal-content">
+            <div id="editor-modal-header">
+                <span id="editor-modal-title">Editor</span>
+                <div id="editor-modal-actions">
+                    <button id="editor-ignored-toggle" type="button" title="Show ignored files" aria-pressed="false">show ignored</button>
+                    <span id="editor-blame-btn" title="Toggle git blame">blame</span>
+                    <span id="editor-save-btn" title="Save (Ctrl+S)">save</span>
+                    <span id="editor-modal-close" data-icon="x"></span>
+                </div>
+            </div>
+            <div id="editor-modal-main">
+                <div id="editor-sidebar">
+                    <div id="editor-file-filter-box">
+                        <input type="text" id="editor-file-filter" placeholder="Filter files..." autocomplete="off">
+                    </div>
+                    <div id="editor-tree-panel">
+                        <div id="editor-tree"></div>
+                    </div>
+                </div>
+                <div id="editor-content">
+                    <div id="editor-tabs"></div>
+                    <div id="editor-body"></div>
+                    <div id="editor-statusbar">
+                        <span id="editor-status-pos">Ln 1, Col 1</span>
+                        <span id="editor-status-blame"></span>
+                        <span id="editor-status-lang"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="find-modal" style="display:none">
+        <div id="find-modal-backdrop"></div>
+        <div id="find-modal-content">
+            <div id="find-modal-header">
+                <span id="find-modal-title">Find in Files</span>
+                <span id="find-modal-summary"></span>
+                <span id="find-modal-close" data-icon="x"></span>
+            </div>
+            <div id="find-modal-toolbar">
+                <div id="find-search-row">
+                    <input type="text" id="find-search-input" placeholder="Search" autocomplete="off">
+                    <div id="find-search-toggles">
+                        <span class="search-toggle" id="search-toggle-case" title="Match Case">Cc</span>
+                        <span class="search-toggle" id="search-toggle-word" title="Match Whole Word">W</span>
+                        <span class="search-toggle" id="search-toggle-regex" title="Use Regular Expression">.*</span>
+                    </div>
+                </div>
+                <div id="find-filter-row">
+                    <input type="text" id="find-include" placeholder="files to include" autocomplete="off">
+                    <input type="text" id="find-exclude" placeholder="files to exclude" autocomplete="off">
+                </div>
+            </div>
+            <div id="find-modal-body">
+                <div id="find-results-panel">
+                    <div id="find-results-list"></div>
+                </div>
+                <div id="find-preview-resizer"></div>
+                <div id="find-preview-panel">
+                    <div id="find-preview-header"></div>
+                    <div id="find-preview-body"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="goto-file-overlay" style="display:none">
+        <div id="goto-file-backdrop"></div>
+        <div id="goto-file-box">
+            <input type="text" id="goto-file-input" placeholder="Go to file..." autocomplete="off">
+            <div id="goto-file-list"></div>
+        </div>
+    </div>
+
+    <div id="goto-project-overlay" style="display:none">
+        <div id="goto-project-backdrop"></div>
+        <div id="goto-project-box">
+            <input type="text" id="goto-project-input" placeholder="Go to project..." autocomplete="off">
+            <div id="goto-project-list"></div>
+        </div>
+    </div>
+
+
+    <div id="settings-modal" style="display:none">
+        <div id="settings-modal-backdrop"></div>
+        <div id="settings-modal-content" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+            <div id="settings-modal-header">
+                <span id="settings-modal-title">Settings</span>
+                <span id="settings-save-status" aria-live="polite"></span>
+                <span id="settings-modal-close" data-icon="x"></span>
+            </div>
+            <div id="settings-modal-main">
+                <nav id="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+                    <button type="button" class="settings-nav-item" data-settings-page="general" role="tab">General</button>
+                    <button type="button" class="settings-nav-item" data-settings-page="projects" role="tab">Projects</button>
+                    <button type="button" class="settings-nav-item" data-settings-page="ai" role="tab">AI CLIs</button>
+                    <button type="button" class="settings-nav-item" data-settings-page="databases" role="tab">Databases</button>
+                </nav>
+                <div id="settings-modal-body">
+                    <section class="settings-page" data-settings-page="general" role="tabpanel">
+                        <h2 class="settings-page-title">General</h2>
+                        <div class="settings-row">
+                            <div class="settings-row-text">
+                                <div class="settings-row-label" id="settings-theme-select-label">Theme</div>
+                                <div class="settings-row-desc">Colors for the whole app and its terminals.</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <select id="settings-theme-select" aria-labelledby="settings-theme-select-label">
+                                    <option value="dark">Loading themes...</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-text">
+                                <div class="settings-row-label" id="settings-terminal-font-size-label">Terminal font size</div>
+                                <div class="settings-row-desc">Text size in terminal panes, from 8 to 32.</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <input type="number" id="settings-terminal-font-size" aria-labelledby="settings-terminal-font-size-label" min="8" max="32" step="1" value="13">
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-text">
+                                <div class="settings-row-label" id="settings-cli-select-label">Default AI CLI</div>
+                                <div class="settings-row-desc">Used for new terminals and scheduled jobs. Running sessions keep theirs until restarted.</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <select id="settings-cli-select" aria-labelledby="settings-cli-select-label">
+                                    <option value="claude">Claude (claude)</option>
+                                    <option value="cursor">Cursor CLI (cursor-agent)</option>
+                                    <option value="openai">OpenAI Codex (codex)</option>
+                                    <option value="gemini">Gemini (gemini)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-text">
+                                <div class="settings-row-label" id="settings-github-activity-label">Show GitHub activity</div>
+                                <div class="settings-row-desc">Today's contributions in the right panel. Needs the gh CLI.</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="settings-switch"><input type="checkbox" id="settings-github-activity" aria-labelledby="settings-github-activity-label"><span class="settings-switch-track"></span></label>
+                            </div>
+                        </div>
+                        <div id="settings-usage-rows"></div>
+                        <div class="settings-row">
+                            <div class="settings-row-text">
+                                <div class="settings-row-label" id="settings-prevent-sleep-label">Keep the system awake while agents work</div>
+                                <div class="settings-row-desc">Display sleep and locking stay unaffected. Sleep is allowed again below 20% on battery. Claude Code separately prevents idle sleep while it works.</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="settings-switch"><input type="checkbox" id="settings-prevent-sleep" aria-labelledby="settings-prevent-sleep-label"><span class="settings-switch-track"></span></label>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="settings-page" data-settings-page="projects" role="tabpanel" hidden>
+                        <h2 class="settings-page-title">Projects</h2>
+                        <div class="settings-block">
+                            <div class="settings-row-label">Scan paths</div>
+                            <div class="settings-row-desc">Each folder is searched for Git repos. At least one is required.</div>
+                            <div id="settings-scan-list"></div>
+                            <div class="settings-extra-add">
+                                <input type="text" id="settings-scan-input" placeholder="/home/user/projects">
+                                <button id="settings-scan-select-btn" class="path-select-btn" type="button" title="Select scan path">
+                                    <span data-icon="folder-open"></span>
+                                    <span>Select</span>
+                                </button>
+                                <button id="settings-scan-add-btn">Add</button>
+                            </div>
+                        </div>
+                        <div class="settings-block">
+                            <div class="settings-row-label">Extra projects</div>
+                            <div class="settings-row-desc">Single repos outside the scan paths.</div>
+                            <div id="settings-extra-list"></div>
+                            <div class="settings-extra-add">
+                                <input type="text" id="settings-extra-input" placeholder="/path/to/project">
+                                <button id="settings-extra-select-btn" class="path-select-btn" type="button" title="Select extra project directory">
+                                    <span data-icon="folder-open"></span>
+                                    <span>Select</span>
+                                </button>
+                                <button id="settings-extra-add-btn">Add</button>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-text">
+                                <div class="settings-row-label" id="settings-startup-git-pull-ff-only-label">Fast-forward only when sessions start</div>
+                                <div class="settings-row-desc">New sessions fetch and update the branch from upstream. On: fast-forward only, never create a merge. Off: merge upstream in.</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="settings-switch"><input type="checkbox" id="settings-startup-git-pull-ff-only" aria-labelledby="settings-startup-git-pull-ff-only-label"><span class="settings-switch-track"></span></label>
+                            </div>
+                        </div>
+                        <div class="settings-block">
+                            <div class="settings-row-label">Project tags</div>
+                            <div class="settings-row-desc">Labels for searching and grouping projects.</div>
+                            <div id="settings-tags-list"></div>
+                            <div class="settings-tags-add">
+                                <input type="text" id="settings-tags-project" placeholder="project name">
+                                <input type="text" id="settings-tags-value" placeholder="frontend, payments">
+                                <button id="settings-tags-add-btn">Add</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="settings-page" data-settings-page="ai" role="tabpanel" hidden>
+                        <h2 class="settings-page-title">AI CLIs</h2>
+                        <div class="settings-block">
+                            <div class="settings-row-label">Installed CLIs</div>
+                            <div class="settings-row-desc">What Agent Deck found on this machine, and whether each CLI may skip its permission prompts.</div>
+                            <div id="settings-health-list"></div>
+                        </div>
+                        <div class="settings-block">
+                            <div class="settings-row-label">Custom integrations</div>
+                            <div class="settings-row-desc">Your own launch commands, such as a wrapper around an AI CLI.</div>
+                            <div id="settings-cli-integrations-list"></div>
+                            <button id="settings-cli-integration-open-btn" class="settings-add-integration-btn" type="button">
+                                <span data-icon="plus"></span>
+                                <span>Add integration</span>
+                            </button>
+                        </div>
+                    </section>
+
+                    <section class="settings-page" data-settings-page="databases" role="tabpanel" hidden>
+                        <h2 class="settings-page-title">Databases</h2>
+                        <div class="settings-block">
+                            <div class="settings-row-label">Database Connections</div>
+                            <div class="settings-row-desc">Read-only workbench entries. Use database users with read-only permissions; saved passwords use system credential storage.</div>
+                            <div id="settings-database-list"></div>
+                            <div id="database-discovery">
+                                <div class="database-section-title">Discover from project</div>
+                                <div id="database-discovery-row">
+                                    <select id="database-discovery-project"></select>
+                                    <button id="database-discovery-scan-btn" type="button">scan</button>
+                                </div>
+                                <div id="database-discovery-results"></div>
+                            </div>
+                            <button id="settings-database-open-btn" class="settings-add-database-btn" type="button">
+                                <span data-icon="plus"></span>
+                                <span>Add connection</span>
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-database-modal" style="display:none">
+        <div id="settings-database-backdrop"></div>
+        <div id="settings-database-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-database-title">
+            <div class="settings-database-dialog-header">
+                <span id="settings-database-title">Add connection</span>
+                <button id="settings-database-close" class="settings-icon-btn" type="button" title="Close" aria-label="Close"><span data-icon="x"></span></button>
+            </div>
+            <div id="settings-database-form">
+                        <div class="settings-database-grid">
+                            <label class="settings-label settings-database-field">Name
+                                <input type="text" id="settings-database-name" placeholder="local app">
+                            </label>
+                            <label class="settings-label settings-database-field">Driver
+                                <select id="settings-database-driver">
+                                    <option value="sqlite">SQLite</option>
+                                    <option value="postgres">Postgres</option>
+                                    <option value="mysql">MySQL</option>
+                                </select>
+                            </label>
+                            <label class="settings-label settings-database-field settings-database-sqlite">SQLite Path
+                                <div class="settings-path-row">
+                                    <input type="text" id="settings-database-sqlite-path" placeholder="/path/to/database.sqlite">
+                                    <button id="settings-database-file-select-btn" class="path-select-btn" type="button" title="Select SQLite database">
+                                        <span data-icon="folder-open"></span>
+                                        <span>Select</span>
+                                    </button>
+                                </div>
+                            </label>
+                            <label class="settings-label settings-database-field settings-database-remote">Host
+                                <input type="text" id="settings-database-host" placeholder="127.0.0.1">
+                            </label>
+                            <label class="settings-label settings-database-field settings-database-remote">Port
+                                <input type="text" id="settings-database-port" placeholder="5432">
+                            </label>
+                            <label class="settings-label settings-database-field settings-database-remote">Database
+                                <input type="text" id="settings-database-dbname" placeholder="app">
+                            </label>
+                            <label class="settings-label settings-database-field settings-database-remote">User
+                                <input type="text" id="settings-database-user" placeholder="readonly_user">
+                            </label>
+                            <label class="settings-label settings-database-field settings-database-remote">Password
+                                <input type="password" id="settings-database-password" placeholder="local password">
+                            </label>
+                            <label class="settings-label settings-database-field settings-database-postgres">SSL Mode
+                                <input type="text" id="settings-database-sslmode" placeholder="disable">
+                            </label>
+                        </div>
+                        <div id="settings-database-actions">
+                            <button id="settings-database-cancel-btn" type="button">Cancel</button>
+                            <button id="settings-database-add-btn" type="button">Add connection</button>
+                        </div>
+                    </div>
+        </div>
+    </div>
+
+    <div id="settings-cli-integration-modal" style="display:none">
+        <div id="settings-cli-integration-backdrop"></div>
+        <div id="settings-cli-integration-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-cli-integration-title">
+            <div class="settings-cli-integration-dialog-header">
+                <span id="settings-cli-integration-title">Add integration</span>
+                <button id="settings-cli-integration-close" class="settings-icon-btn" type="button" title="Close" aria-label="Close"><span data-icon="x"></span></button>
+            </div>
+            <div class="settings-cli-integration-form">
+                <label>Name<input type="text" id="settings-cli-integration-name" placeholder="Custom agent"></label>
+                <label>Integration ID<input type="text" id="settings-cli-integration-id" placeholder="custom-agent"></label>
+                <label class="settings-cli-integration-form-wide">Command<input type="text" id="settings-cli-integration-command" placeholder="custom-agent"></label>
+                <label class="settings-cli-integration-form-wide">Resume command<input type="text" id="settings-cli-integration-resume" placeholder="custom-agent resume --last"></label>
+                <label class="settings-cli-integration-form-wide">Check command<input type="text" id="settings-cli-integration-check" placeholder="custom-agent"></label>
+            </div>
+            <div class="settings-cli-integration-dialog-actions">
+                <button id="settings-cli-integration-cancel-btn" type="button">Cancel</button>
+                <button id="settings-cli-integration-add-btn" type="button">Add integration</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="command-palette-modal" style="display:none">
+        <div id="command-palette-backdrop"></div>
+        <div id="command-palette-content">
+            <div id="command-palette-header">
+                <input type="text" id="command-palette-input" placeholder="Search actions and projects..." autocomplete="off">
+                <span id="command-palette-close" data-icon="x"></span>
+            </div>
+            <div id="command-palette-results"></div>
+        </div>
+    </div>
+
+    <div id="database-password-modal" style="display:none">
+        <div id="database-password-backdrop"></div>
+        <div id="database-password-content">
+            <div id="database-password-header">
+                <div>
+                    <span>Database Password</span>
+                    <div id="database-password-subtitle"></div>
+                </div>
+                <span id="database-password-close" data-icon="x"></span>
+            </div>
+            <div id="database-password-body">
+                <label class="settings-label">Password
+                    <input type="password" id="database-password-input" autocomplete="current-password">
+                </label>
+                <label id="database-password-save-row">
+                    <input type="checkbox" id="database-password-save">
+                    <span>Save password in system credential storage</span>
+                </label>
+            </div>
+            <div id="database-password-actions">
+                <button id="database-password-cancel" type="button">Cancel</button>
+                <button id="database-password-submit" type="button">Connect</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="text-prompt-modal" style="display:none">
+        <div id="text-prompt-backdrop"></div>
+        <div id="text-prompt-content">
+            <div id="text-prompt-header">
+                <div>
+                    <span id="text-prompt-title"></span>
+                    <div id="text-prompt-subtitle"></div>
+                </div>
+                <span id="text-prompt-close" data-icon="x"></span>
+            </div>
+            <div id="text-prompt-body">
+                <input type="text" id="text-prompt-input" autocomplete="off" spellcheck="false">
+            </div>
+            <div id="text-prompt-actions">
+                <button id="text-prompt-cancel" type="button">Cancel</button>
+                <button id="text-prompt-submit" type="button">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="shortcuts-modal" style="display:none">
+        <div id="shortcuts-modal-backdrop"></div>
+        <div id="shortcuts-modal-content">
+            <div id="shortcuts-modal-header">
+                <div>
+                    <span>Keyboard Shortcuts</span>
+                    <div id="shortcuts-modal-subtitle">Context-aware workspace controls</div>
+                </div>
+                <div id="shortcuts-modal-actions">
+                    <button id="shortcuts-config-btn" type="button">Keymap</button>
+                    <span id="shortcuts-modal-close" data-icon="x"></span>
+                </div>
+            </div>
+            <div id="shortcuts-modal-body">
+                <div id="shortcuts-context-copy"></div>
+                <div id="shortcuts-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="keymap-config-modal" style="display:none">
+        <div id="keymap-config-backdrop"></div>
+        <div id="keymap-config-content">
+            <div id="keymap-config-header">
+                <div>
+                    <span>Keymap Config</span>
+                    <div id="keymap-config-subtitle">Profiles for command shortcuts</div>
+                </div>
+                <span id="keymap-config-close" data-icon="x"></span>
+            </div>
+            <div id="keymap-config-toolbar">
+                <select id="keymap-profile-select"></select>
+                <input type="text" id="keymap-profile-name" placeholder="Profile name">
+                <button id="keymap-profile-create-btn" type="button">New Profile</button>
+                <button id="keymap-profile-delete-btn" type="button">Delete</button>
+            </div>
+            <div id="keymap-command-tools">
+                <input type="search" id="keymap-command-search" placeholder="Search commands">
+                <div id="keymap-profile-summary"></div>
+            </div>
+            <div id="keymap-command-list"></div>
+            <div id="keymap-config-actions">
+                <button id="keymap-profile-reset-btn" type="button">Reset Profile</button>
+                <button id="keymap-config-save-btn" type="button">Save Profile</button>
+                <button id="keymap-config-cancel-btn" type="button">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="job-schedule-modal" style="display:none">
+        <div id="job-schedule-backdrop"></div>
+        <div id="job-schedule-content">
+            <div id="job-schedule-header">
+                <span>Build Schedule</span>
+                <span id="job-schedule-close" data-icon="x"></span>
+            </div>
+            <div id="job-schedule-body">
+                <label class="job-field">
+                    <span>Repeat</span>
+                    <select id="job-schedule-mode">
+                        <option value="daily">Daily</option>
+                        <option value="weekdays">Weekdays</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="hourly">Hourly</option>
+                        <option value="interval">Every few minutes</option>
+                        <option value="custom">Custom cron</option>
+                    </select>
+                </label>
+                <div id="job-schedule-options">
+                    <label class="job-field job-schedule-part" data-schedule-modes="interval">
+                        <span>Every</span>
+                        <select id="job-schedule-interval">
+                            <option value="5">5 minutes</option>
+                            <option value="10">10 minutes</option>
+                            <option value="15">15 minutes</option>
+                            <option value="30">30 minutes</option>
+                        </select>
+                    </label>
+                    <label class="job-field job-schedule-part" data-schedule-modes="hourly">
+                        <span>Minute</span>
+                        <input type="number" id="job-schedule-minute" min="0" max="59" value="0">
+                    </label>
+                    <label class="job-field job-schedule-part" data-schedule-modes="daily weekdays weekly monthly">
+                        <span>Time</span>
+                        <input type="time" id="job-schedule-time" value="09:00">
+                    </label>
+                    <label class="job-field job-schedule-part" data-schedule-modes="weekly">
+                        <span>Day</span>
+                        <select id="job-schedule-weekday">
+                            <option value="1">Monday</option>
+                            <option value="2">Tuesday</option>
+                            <option value="3">Wednesday</option>
+                            <option value="4">Thursday</option>
+                            <option value="5">Friday</option>
+                            <option value="6">Saturday</option>
+                            <option value="0">Sunday</option>
+                        </select>
+                    </label>
+                    <label class="job-field job-schedule-part" data-schedule-modes="monthly">
+                        <span>Day of month</span>
+                        <input type="number" id="job-schedule-monthday" min="1" max="31" value="1">
+                    </label>
+                </div>
+                <div id="job-schedule-preview"></div>
+                <div id="job-schedule-actions">
+                    <button id="job-schedule-use-btn" type="button">insert cron</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="app-dialog-modal" style="display:none">
+        <div id="app-dialog-backdrop"></div>
+        <div id="app-dialog-content" role="dialog" aria-modal="true" aria-labelledby="app-dialog-message">
+            <div id="app-dialog-message"></div>
+            <input type="text" id="app-dialog-input" style="display:none" spellcheck="false" autocomplete="off">
+            <div id="app-dialog-actions">
+                <button id="app-dialog-cancel" type="button">Cancel</button>
+                <button id="app-dialog-confirm" type="button">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-region" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="/vendor/xterm/xterm.js"></script>
+    <script src="/vendor/xterm-addons/addon-fit.js"></script>
+    <script src="/vendor/xterm-addons/addon-unicode-graphemes.js"></script>
+    <script src="/vendor/monaco-editor/min/vs/loader.js"></script>
+    <script src="/icons.js"></script>
+    <script src="/terminal_interactions.js"></script>
+    <script src="/terminal_transport.js"></script>
+    <script src="/keymap.js"></script>
+    <script src="/app.js"></script>
+</body>
+</html>

@@ -21,8 +21,12 @@ need() {
 need docker
 
 BUILD_COMMIT_DATE="$(git show -s --format=%cs HEAD 2>/dev/null || true)"
+BUILD_VERSION="$(./scripts/version.sh)"
 
-docker compose build --build-arg "BUILD_COMMIT_DATE=${BUILD_COMMIT_DATE}" builder
+docker compose build \
+	--build-arg "BUILD_COMMIT_DATE=${BUILD_COMMIT_DATE}" \
+	--build-arg "BUILD_VERSION=${BUILD_VERSION}" \
+	builder
 docker rm -f "${BINARY}-extract" >/dev/null 2>&1 || true
 docker create --network none --name "${BINARY}-extract" "$IMAGE" >/dev/null
 docker cp "${BINARY}-extract:/agentdeck" "./${BINARY}"

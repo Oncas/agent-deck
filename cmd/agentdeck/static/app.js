@@ -295,12 +295,16 @@ refreshAIProviders([]);
         return Keymap.commandShortcutLabel(state, commandID, keymapOptions());
     }
 
+    // The version, such as 1.2.0 or 1.2.0-dev+abc1234 for a dev build, with the
+    // commit date in the tooltip. Builds without a version show the date.
     function renderBuildInfo(info) {
         const el = document.getElementById('build-info');
         if (!el) return;
-        const commitDate = info && info.commit_date ? String(info.commit_date) : 'unknown';
-        el.textContent = commitDate;
-        el.title = commitDate;
+        const version = info && info.version ? String(info.version) : '';
+        const commitDate = info && info.commit_date ? String(info.commit_date) : '';
+        el.textContent = version || commitDate || 'unknown';
+        el.title = [version && `Version ${version}`, commitDate && `committed ${commitDate}`]
+            .filter(Boolean).join(', ') || 'unknown';
     }
 
     async function loadBuildInfo() {

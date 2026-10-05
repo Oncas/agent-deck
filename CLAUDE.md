@@ -12,18 +12,26 @@ All builds happen in Docker — no local Go toolchain needed.
 
   ```bash
   BUILD_COMMIT_DATE="$(git show -s --format=%cs HEAD 2>/dev/null || true)" && \
-    docker compose build --build-arg BUILD_COMMIT_DATE="$BUILD_COMMIT_DATE" builder && \
+    BUILD_VERSION="$(./scripts/version.sh)" && \
+    docker compose build --build-arg BUILD_COMMIT_DATE="$BUILD_COMMIT_DATE" \
+      --build-arg BUILD_VERSION="$BUILD_VERSION" builder && \
     docker create --name agentdeck-extract agentdeck-builder && \
     docker cp agentdeck-extract:/agentdeck ./agentdeck && \
     docker rm agentdeck-extract && \
     chmod +x ./agentdeck
   ```
 
+- Versions come from git tags (`v1.2.0`) through `scripts/version.sh`; anything
+  but a clean tagged checkout builds as `<last tag>-dev+<commit>`. Every build
+  path passes it as the `BUILD_VERSION` build arg, next to `BUILD_COMMIT_DATE`.
 - Run with Electron (dev): `make electron` (builds binary + downloads Electron + launches)
 - Run with Electron + static UI hot reload: `make electron-dev`
 - No-`make` hot-reload equivalent: `./scripts/electron-dev.sh`
 - Package AppImage and launch it with `--no-sandbox`: `./scripts/electron-package.sh` (outputs to `./dist/`)
 - Package without launching: `./scripts/electron-package.sh --no-start`
+- Install the version tagged at HEAD as the stable app: `./scripts/release.sh`
+  (builds it, copies it to `~/Applications/AgentDeck-<version>.AppImage` and
+  points the menu entry there; refuses untagged or uncommitted checkouts)
 - Go mod tidy: `docker compose run --rm dev "go mod tidy"`
 - Clean all: `make clean`
 

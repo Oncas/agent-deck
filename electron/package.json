@@ -20,7 +20,8 @@
     "productName": "Agent Deck",
     "linux": {
       "target": "AppImage",
-      "category": "Development"
+      "category": "Development",
+      "artifactName": "AgentDeck-${version}.${ext}"
     },
     "mac": {
       "target": "dmg",

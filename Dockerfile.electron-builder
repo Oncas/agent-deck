@@ -5,10 +5,11 @@ FROM golang:1.24-alpine AS gobuilder
 RUN apk add --no-cache git
 WORKDIR /src
 ARG BUILD_COMMIT_DATE=
+ARG BUILD_VERSION=
 COPY go.mod go.sum* ./
 RUN go mod download 2>/dev/null || true
 COPY . .
-RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X agentdeck/internal/buildinfo.CommitDate=${BUILD_COMMIT_DATE}" -o /agentdeck ./cmd/agentdeck
+RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X agentdeck/internal/buildinfo.CommitDate=${BUILD_COMMIT_DATE} -X agentdeck/internal/buildinfo.Version=${BUILD_VERSION}" -o /agentdeck ./cmd/agentdeck
 
 # Stage 2: Package Electron app
 FROM node:20-bookworm
@@ -24,7 +25,10 @@ COPY --from=gobuilder /agentdeck ./agentdeck
 RUN chmod +x ./agentdeck
 
 RUN npm install
+# The app's version names the AppImage; without one, package.json's is used.
+ARG BUILD_VERSION=
 RUN npx electron-builder --linux AppImage --x64 \
-    --config.directories.output=/out
+    --config.directories.output=/out \
+    ${BUILD_VERSION:+--config.extraMetadata.version="$BUILD_VERSION"}
 
 CMD ["sh", "-c", "find /dist -maxdepth 1 -name '*.AppImage' -delete 2>/dev/null || true; cp /out/*.AppImage /dist/"]

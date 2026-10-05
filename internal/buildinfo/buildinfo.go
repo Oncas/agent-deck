@@ -5,14 +5,21 @@ import (
 	"strings"
 )
 
-var CommitDate = ""
+// Set at build time with -ldflags -X. Version comes from scripts/version.sh:
+// a release such as 1.2.3, or a dev build such as 1.2.3-dev+abc1234.
+var (
+	Version    = ""
+	CommitDate = ""
+)
 
 type Info struct {
+	Version    string `json:"version"`
 	CommitDate string `json:"commit_date"`
 }
 
 func Current() Info {
 	info := Info{
+		Version:    clean(Version),
 		CommitDate: dateOnly(CommitDate),
 	}
 
@@ -29,8 +36,18 @@ func Current() Info {
 	return info
 }
 
+// Summary is the --version output: "1.2.3 (2026-10-05)", or whichever of the
+// two is known.
 func Summary() string {
-	return valueOrUnknown(Current().CommitDate)
+	info := Current()
+	switch {
+	case info.Version != "" && info.CommitDate != "":
+		return info.Version + " (" + info.CommitDate + ")"
+	case info.Version != "":
+		return info.Version
+	default:
+		return valueOrUnknown(info.CommitDate)
+	}
 }
 
 func clean(value string) string {

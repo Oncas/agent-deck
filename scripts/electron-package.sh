@@ -10,10 +10,14 @@ if [ "${1:-}" = "--no-start" ]; then
 fi
 
 BUILD_COMMIT_DATE="$(git show -s --format=%cs HEAD 2>/dev/null || true)"
+BUILD_VERSION="$(./scripts/version.sh)"
 mkdir -p dist
 rm -f dist/*.AppImage
 
-docker compose build --build-arg "BUILD_COMMIT_DATE=${BUILD_COMMIT_DATE}" electron-builder
+docker compose build \
+	--build-arg "BUILD_COMMIT_DATE=${BUILD_COMMIT_DATE}" \
+	--build-arg "BUILD_VERSION=${BUILD_VERSION}" \
+	electron-builder
 # Run as the invoking user so the AppImage in ./dist/ is not root-owned.
 docker compose run --rm --user "$(id -u):$(id -g)" electron-builder
 

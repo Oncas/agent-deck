@@ -1,8 +1,9 @@
 BINARY := agentdeck
 IMAGE  := agentdeck-builder
 BUILD_COMMIT_DATE := $(shell git show -s --format=%cs HEAD 2>/dev/null || true)
-BUILD_ARGS := --build-arg BUILD_COMMIT_DATE=$(BUILD_COMMIT_DATE)
-BUILD_LDFLAGS := -s -w -X agentdeck/internal/buildinfo.CommitDate=$(BUILD_COMMIT_DATE)
+BUILD_VERSION := $(shell ./scripts/version.sh)
+BUILD_ARGS := --build-arg BUILD_COMMIT_DATE=$(BUILD_COMMIT_DATE) --build-arg BUILD_VERSION=$(BUILD_VERSION)
+BUILD_LDFLAGS := -s -w -X agentdeck/internal/buildinfo.CommitDate=$(BUILD_COMMIT_DATE) -X agentdeck/internal/buildinfo.Version=$(BUILD_VERSION)
 
 ELECTRON_VERSION := 34.5.8
 ELECTRON_DIR     := electron

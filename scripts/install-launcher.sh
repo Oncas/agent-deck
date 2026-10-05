@@ -22,6 +22,12 @@ if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ] && [ "$detected_de" = 
 	warn "no graphical session detected — the launcher will be written, but nothing will pick it up until you log into a desktop."
 fi
 
+# Resolved before the cd below, so a relative path means the caller's folder.
+given_appimage=""
+if [ -n "${1:-}" ] && [ "$1" != "--uninstall" ]; then
+	given_appimage="$(readlink -f "$1" 2>/dev/null || printf '%s' "$1")"
+fi
+
 cd "$(dirname "$0")/.."
 
 APP_ID="agentdeck"
@@ -52,15 +58,21 @@ if [ "${1:-}" = "--uninstall" ]; then
 	exit 0
 fi
 
-appimage=""
-for candidate in dist/*.AppImage; do
-	if [ -e "$candidate" ]; then
-		appimage="$candidate"
-		break
+# An AppImage given as the argument (release.sh passes the installed stable
+# one); otherwise the latest build in ./dist.
+appimage="$given_appimage"
+if [ -n "$appimage" ]; then
+	[ -f "$appimage" ] || die "no AppImage at '$appimage'."
+else
+	for candidate in dist/*.AppImage; do
+		if [ -e "$candidate" ]; then
+			appimage="$candidate"
+			break
+		fi
+	done
+	if [ -z "$appimage" ]; then
+		die "no AppImage found in ./dist; run ./scripts/electron-package.sh --no-start first."
 	fi
-done
-if [ -z "$appimage" ]; then
-	die "no AppImage found in ./dist — run ./scripts/electron-package.sh --no-start first."
 fi
 appimage_abs="$(readlink -f "$appimage")"
 [ -x "$appimage_abs" ] || chmod +x "$appimage_abs"

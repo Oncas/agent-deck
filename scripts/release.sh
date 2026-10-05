@@ -3,6 +3,8 @@
 # AppImage is copied to ~/Applications and the "Agent Deck" menu entry is
 # pointed at it. Test builds in ./dist (electron-package.sh) and dev builds
 # (make electron-dev) never replace it.
+# This is a local installer, not a publisher. GitHub Actions builds public
+# draft releases when version tags are pushed; see docs/releases.md.
 #
 #   git tag v1.2.0
 #   ./scripts/release.sh

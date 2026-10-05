@@ -1,0 +1,143 @@
+name: Linux release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build (for example v1.0.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release version
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Expected a stable version tag such as v1.0.1.' >&2
+            exit 1
+          fi
+          version="${RELEASE_TAG#v}"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          test "$(./scripts/version.sh)" = "$version"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+
+      - name: Install virtual display and Electron libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libatk-bridge2.0-0 libx11-xcb1
+
+      - name: Go tests and vet
+        run: docker compose run --rm dev "apk add --no-cache git >/dev/null && go test ./... && go vet ./..."
+
+      - name: Frontend tests (including real Electron terminal)
+        run: |
+          npm ci --prefix electron
+          cd cmd/agentdeck/static-tests
+          xvfb-run -a node --test ./*_test.js
+
+      - name: Build AppImage
+        env:
+          GH_TOKEN: ''
+        run: ./scripts/electron-package.sh --no-start
+
+      - name: Smoke test packaged app
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          xvfb-run -a node scripts/appimage-smoke.mjs "dist/AgentDeck-$RELEASE_VERSION.AppImage" "$RELEASE_VERSION" 2>&1 | tee "$RUNNER_TEMP/appimage-smoke.log"
+
+      - name: Prepare downloads and checksums
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cp scripts/install-launcher.sh dist/install-launcher.sh
+          cd dist
+          sha256sum "AgentDeck-$RELEASE_VERSION.AppImage" install-launcher.sh > SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          if-no-files-found: error
+          path: |
+            dist/*.AppImage
+            dist/install-launcher.sh
+            dist/SHA256SUMS
+
+      - name: Save smoke test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage-smoke-log
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/appimage-smoke.log
+
+  draft-release:
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ needs.build.outputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-x86_64
+          path: release
+
+      - name: Create draft for manual testing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          # Never replace an artifact that someone may already have tested or downloaded.
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "A release already exists for $RELEASE_TAG. Its downloads have been left intact." >&2
+            exit 1
+          fi
+          cd release
+          sha256sum -c SHA256SUMS
+          cd ..
+          gh release create "$RELEASE_TAG" \
+            "release/AgentDeck-$RELEASE_VERSION.AppImage" \
+            release/install-launcher.sh release/SHA256SUMS \
+            --verify-tag --draft --title "Agent Deck $RELEASE_VERSION" \
+            --notes-file docs/release-notes.md --generate-notes

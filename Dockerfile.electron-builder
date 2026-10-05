@@ -20,11 +20,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 
-COPY electron/package.json electron/main.js electron/preload.js ./
+COPY electron/package.json electron/package-lock.json electron/main.js electron/preload.js ./
 COPY --from=gobuilder /agentdeck ./agentdeck
 RUN chmod +x ./agentdeck
 
-RUN npm install
+RUN npm ci
 # The app's version names the AppImage; without one, package.json's is used.
 ARG BUILD_VERSION=
 RUN npx electron-builder --linux AppImage --x64 \

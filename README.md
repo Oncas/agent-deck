@@ -172,6 +172,32 @@ All run from the repo folder.
 | Run the frontend tests | `cd cmd/agentdeck/static-tests && node --test *_test.js` |
 | Remove build output | `make clean` |
 | Remove the app menu entry | `./scripts/install-launcher.sh --uninstall` |
+| Install a tagged version as the stable app | `./scripts/release.sh` |
+
+#### Stable app and versions
+
+Building from the repo puts whatever you have checked out into `./dist/`, so a
+menu entry pointing there changes with every test build. To keep a stable app
+while you work on the code, release a tagged version instead:
+
+```bash
+git tag v1.2.0
+./scripts/release.sh
+```
+
+This builds that exact commit, copies it to `~/Applications/AgentDeck-1.2.0.AppImage`
+and points the "Agent Deck" menu entry at it. Later test builds and
+`make electron-dev` leave it alone, and they keep their own settings: the
+AppImage reads `~/.config/agentdeck/`, dev builds the repo's `config.json`.
+Older versions stay in `~/Applications`; to go back, run
+`./scripts/install-launcher.sh` with the older AppImage.
+
+Versions follow `MAJOR.MINOR.PATCH`: bug fixes raise the last number (1.2.0 ->
+1.2.1), new features the middle one (1.2.1 -> 1.3.0), and breaking changes,
+such as an old config no longer loading, the first (1.3.0 -> 2.0.0). A build
+that isn't a clean tagged commit is marked as a dev build, such as
+`1.2.0-dev+abc1234`. The version shows in the status bar and in
+`agentdeck --version`.
 
 ### macOS
 

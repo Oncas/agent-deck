@@ -1325,7 +1325,7 @@ test('startup git pull mode is wired through settings and config', () => {
     assert.match(saveSection, /startup_git_pull_ff_only: startupGitPullFFOnlySetting/);
 });
 
-test('status bar displays stamped commit date only', () => {
+test('status bar displays the stamped version, with the commit date as its tooltip', () => {
     const start = indexHtml.indexOf('<div id="statusbar">');
     const end = indexHtml.indexOf('</div>', start);
     const statusbarSection = indexHtml.slice(start, end);
@@ -1341,6 +1341,18 @@ test('status bar displays stamped commit date only', () => {
     assert.doesNotMatch(buildInfoSection, /commit_short|built_at|modified/);
     assert.match(serverGo, /"GET \/api\/build", api\.handleBuildInfo/);
     assert.match(buildInfoGo, /buildinfo\.Current\(\)/);
+
+    const render = (info) => {
+        const el = { textContent: '', title: '' };
+        const document = { getElementById: () => el };
+        vm.runInNewContext(`${functionSource('renderBuildInfo')}\nrenderBuildInfo(info);`, { document, info });
+        return el;
+    };
+    assert.deepEqual({ ...render({ version: '1.2.0', commit_date: '2026-10-05' }) },
+        { textContent: '1.2.0', title: 'Version 1.2.0, committed 2026-10-05' });
+    assert.deepEqual({ ...render({ commit_date: '2026-10-05' }) },
+        { textContent: '2026-10-05', title: 'committed 2026-10-05' });
+    assert.deepEqual({ ...render(null) }, { textContent: 'unknown', title: 'unknown' });
 });
 
 test('command palette exposes git status panel actions', () => {

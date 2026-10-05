@@ -18,11 +18,13 @@ case "$(uname -s)" in
 esac
 
 BUILD_COMMIT_DATE="$(git show -s --format=%cs HEAD 2>/dev/null || true)"
+BUILD_VERSION="$(./scripts/version.sh)"
 GO_ARCH="$(uname -m | sed 's/x86_64/amd64/')"
 
 # Cross-compile darwin Go binary inside the existing builder image.
 docker compose build \
 	--build-arg "BUILD_COMMIT_DATE=${BUILD_COMMIT_DATE}" \
+	--build-arg "BUILD_VERSION=${BUILD_VERSION}" \
 	--build-arg "GO_OS=darwin" \
 	--build-arg "GO_ARCH=${GO_ARCH}" \
 	builder
@@ -36,7 +38,7 @@ chmod +x ./electron/agentdeck
 cd electron
 [ -d node_modules ] || npm install
 rm -rf dist
-npx electron-builder --mac dmg
+npx electron-builder --mac dmg --config.extraMetadata.version="$BUILD_VERSION"
 
 dmg=""
 for candidate in dist/*.dmg; do

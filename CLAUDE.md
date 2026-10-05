@@ -35,6 +35,14 @@ All builds happen in Docker — no local Go toolchain needed.
 - Go mod tidy: `docker compose run --rm dev "go mod tidy"`
 - Clean all: `make clean`
 
+Public Linux x86-64 downloads are built by `.github/workflows/release.yml` when
+a stable `vMAJOR.MINOR.PATCH` tag is pushed. It tests and smoke-checks the actual
+AppImage, then creates a draft release for manual testing and publication.
+`release.sh` remains a local installer and does not publish anything. See
+`docs/releases.md` for versioning and the maintainer checklist. Packaging uses
+`npm ci` with `electron/package-lock.json`; keep the lockfile in sync when
+changing dependencies.
+
 Note: If `make` is not installed, run the docker compose commands from the Makefile manually.
 
 ## Architecture

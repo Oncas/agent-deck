@@ -604,10 +604,12 @@
                         </div>
                         <div class="settings-block">
                             <div class="settings-row-label">Project labels</div>
-                            <div class="settings-row-desc">Shown next to the project name in the sidebar, which can filter by them. Separate several labels with commas.</div>
+                            <div class="settings-row-desc">Shown next to the project name in the sidebar, which can filter by them. Pick one or more projects, type labels separated by commas, and Add puts them on every picked project.</div>
                             <div id="settings-tags-list"></div>
                             <div class="settings-tags-add">
-                                <input type="text" id="settings-tags-project" placeholder="project name" autocomplete="off" spellcheck="false">
+                                <div id="settings-tags-projects" class="label-project-picker">
+                                    <input type="text" id="settings-tags-project" placeholder="project names" autocomplete="off" spellcheck="false" aria-label="Projects to label">
+                                </div>
                                 <input type="text" id="settings-tags-value" placeholder="frontend, payments">
                                 <button id="settings-tags-add-btn">Add</button>
                             </div>

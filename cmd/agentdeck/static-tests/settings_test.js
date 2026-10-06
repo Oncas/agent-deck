@@ -424,37 +424,51 @@ test('a period with unpriced models marks its cost as a lower bound', () => {
     assert.doesNotMatch(html, /\$40\.00\+/);
 });
 
-test('project label suggestions use the themed dropdown and keyboard like the branch autocomplete', () => {
-    const body = { children: [], appendChild(child) { this.children.push(child); child.parent = this; } };
-    const element = () => ({
-        children: [], style: {}, focused: false,
-        appendChild(child) { this.children.push(child); },
-        remove() { body.children = body.children.filter(item => item !== this); },
+test('project labels: pick several projects as chips, then add labels to all of them', () => {
+    let focused = null;
+    const element = (props = {}) => ({
+        children: [], style: {}, className: '', attributes: {}, value: '', ...props,
+        appendChild(child) { this.children.push(child); child.parentNode = this; },
+        insertBefore(child, ref) {
+            const index = this.children.indexOf(ref);
+            this.children.splice(index < 0 ? this.children.length : index, 0, child);
+            child.parentNode = this;
+        },
+        remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(item => item !== this); },
+        querySelectorAll(selector) {
+            const name = selector.replace(/^\./, '');
+            return this.children.filter(child => child.className.split(' ').includes(name));
+        },
+        setAttribute(name, value) { this.attributes[name] = String(value); },
         scrollIntoView() {},
-        focus() { this.focused = true; },
+        focus() { focused = this; },
+        getBoundingClientRect: () => ({ left: 10, bottom: 40, width: 300 }),
     });
-    const elements = {
-        'settings-tags-project': { value: '', getBoundingClientRect: () => ({ left: 10, bottom: 40, width: 200 }) },
-        'settings-tags-value': element(),
-    };
-    elements['settings-tags-value'].value = '';
+    const body = element();
+    const input = element({ placeholder: 'project names' });
+    const picker = element();
+    picker.appendChild(input);
+    const valueInput = element();
+    const elements = { 'settings-tags-projects': picker, 'settings-tags-project': input, 'settings-tags-value': valueInput };
+    let saves = 0;
     const context = {
         projectLabelSuggest: null,
+        labelDraftProjects: [],
         projects: [{ name: 'shop-web' }, { name: 'shop-api' }, { name: 'agent-deck' }],
         settingsProjectTags: { 'shop-api': ['backend', 'payments'] },
-        document: { body, getElementById: id => elements[id], createElement: element },
+        document: { body, getElementById: id => elements[id], createElement: () => element() },
+        iconHTML: () => '<svg></svg>',
+        renderProjectTags() {},
+        noteSettingsChange() { saves++; },
     };
     vm.runInNewContext([
         'projectLabelSuggestionItems', 'showProjectLabelSuggestions', 'moveProjectLabelSuggestion',
-        'applyProjectLabelSuggestion', 'hideProjectLabelSuggestions', 'handleProjectLabelSuggestionKeydown',
-        'prefillProjectLabels',
+        'applyProjectLabelSuggestion', 'removeLabelProject', 'renderLabelProjectChips',
+        'hideProjectLabelSuggestions', 'handleProjectLabelSuggestionKeydown', 'addProjectTags',
     ].map(functionSource).join('\n'), context);
     const dropdown = () => body.children[0];
-    const rows = () => dropdown().children.map(row => ({
-        name: row.children[0].textContent,
-        labels: row.children[1]?.textContent,
-        highlighted: row.className.includes('highlighted'),
-    }));
+    const rows = () => dropdown()?.children.map(row => [row.children[0].textContent, row.children[1]?.textContent, row.className.includes('highlighted')]);
+    const chips = () => picker.children.filter(child => child !== input).map(chip => chip.children[0].textContent);
     const key = name => {
         const ev = { key: name, prevented: false, stopped: false };
         ev.preventDefault = () => { ev.prevented = true; };
@@ -463,50 +477,70 @@ test('project label suggestions use the themed dropdown and keyboard like the br
         return ev;
     };
 
-    // Focus shows every project, sorted, with current labels, under the field.
+    // Focus lists every project, sorted, with its labels, in the themed dropdown.
     context.showProjectLabelSuggestions();
-    assert.equal(body.children.length, 1);
     assert.equal(dropdown().className, 'branch-autocomplete');
-    assert.deepEqual({ ...dropdown().style }, { left: '10px', top: '40px', width: '200px' });
+    assert.deepEqual({ ...dropdown().style }, { left: '10px', top: '40px', width: '300px' });
     assert.deepEqual(rows(), [
-        { name: 'agent-deck', labels: undefined, highlighted: false },
-        { name: 'shop-api', labels: 'backend, payments', highlighted: false },
-        { name: 'shop-web', labels: undefined, highlighted: false },
+        ['agent-deck', undefined, false],
+        ['shop-api', 'backend, payments', false],
+        ['shop-web', undefined, false],
     ]);
 
-    // Typing filters and highlights the first match; arrows move and wrap.
-    elements['settings-tags-project'].value = 'shop';
+    // Typing filters; Enter turns the highlighted project into a chip, clears
+    // the field and keeps the list open without the picked project.
+    input.value = 'shop';
     context.showProjectLabelSuggestions(true);
-    assert.equal(body.children.length, 1, 'the previous list is replaced, not stacked');
-    assert.deepEqual(rows().map(row => [row.name, row.highlighted]), [['shop-api', true], ['shop-web', false]]);
-    assert.equal(key('ArrowDown').prevented, true);
-    assert.deepEqual(rows().map(row => row.highlighted), [false, true]);
-    key('ArrowDown');
-    assert.deepEqual(rows().map(row => row.highlighted), [true, false]);
-
-    // Enter picks the highlighted project and fills in its labels.
+    assert.deepEqual(rows().map(row => row[0]), ['shop-api', 'shop-web']);
     assert.equal(key('Enter').prevented, true);
-    assert.equal(elements['settings-tags-project'].value, 'shop-api');
-    assert.equal(elements['settings-tags-value'].value, 'backend, payments');
-    assert.equal(elements['settings-tags-value'].focused, true);
-    assert.equal(body.children.length, 0);
-    assert.equal(context.projectLabelSuggest, null);
+    assert.deepEqual(chips(), ['shop-api']);
+    assert.equal(input.value, '');
+    assert.equal(input.placeholder, '');
+    assert.deepEqual(rows().map(row => row[0]), ['agent-deck', 'shop-web']);
+    key('ArrowDown');
+    key('Enter');
+    assert.deepEqual(chips(), ['shop-api', 'shop-web']);
+    assert.equal(body.children.length, 1, 'one list, replaced as it changes');
+
+    // Backspace in the empty field removes the last chip; x removes any chip.
+    key('Backspace');
+    assert.deepEqual(chips(), ['shop-api']);
+    picker.children[0].children[1].onclick();
+    assert.deepEqual(chips(), []);
+    assert.equal(input.placeholder, 'project names');
+    assert.equal(focused, input);
 
     // Escape closes only the list; with no list open it reaches Settings.
-    context.showProjectLabelSuggestions();
-    const escape = key('Escape');
-    assert.equal(escape.stopped, true);
+    context.applyProjectLabelSuggestion('shop-api');
+    context.applyProjectLabelSuggestion('shop-web');
+    assert.equal(key('Escape').stopped, true);
     assert.equal(body.children.length, 0);
     assert.equal(key('Escape').stopped, false);
 
-    // No match closes the list; labels already typed are never overwritten.
-    elements['settings-tags-project'].value = 'nothing-like-this';
-    context.showProjectLabelSuggestions(true);
-    assert.equal(body.children.length, 0);
-    elements['settings-tags-project'].value = 'shop-api';
-    elements['settings-tags-value'].value = 'frontend';
-    context.prefillProjectLabels();
-    assert.equal(elements['settings-tags-value'].value, 'frontend');
+    // Enter in the empty field moves on to the labels.
+    assert.equal(key('Enter').prevented, true);
+    assert.equal(focused, valueInput);
 
+    // Add puts the labels on every picked project, keeping the ones they had.
+    valueInput.value = 'payments, frontend';
+    context.addProjectTags();
+    assert.deepEqual(JSON.parse(JSON.stringify(context.settingsProjectTags)), {
+        'shop-api': ['backend', 'payments', 'frontend'],
+        'shop-web': ['payments', 'frontend'],
+    });
+    assert.deepEqual(chips(), []);
+    assert.equal(valueInput.value, '');
+    assert.equal(saves, 1, 'Add saves even when it came from Enter');
+
+    // A name still typed in the field counts too; nothing picked does nothing.
+    input.value = 'agent-deck';
+    valueInput.value = 'tools';
+    context.addProjectTags();
+    assert.deepEqual([...context.settingsProjectTags['agent-deck']], ['tools']);
+    valueInput.value = 'ignored';
+    context.addProjectTags();
+    assert.equal(saves, 2);
+
+    assert.match(indexHtml, /<div id="settings-tags-projects" class="label-project-picker">\s*<input type="text" id="settings-tags-project"/);
     assert.doesNotMatch(indexHtml, /<datalist/);
 });

@@ -162,6 +162,88 @@ test('workspace dialog Escape contains IME events and delayed terminal focus res
     assert.equal(focused, 1);
 });
 
+test('Shift-click ranges select, clear, and follow the visible order', () => {
+    const context = { workspaceChoiceAnchor: null, workspaceDraftProjects: new Set() };
+    vm.runInNewContext(functionSource('toggleWorkspaceChoiceRange'), context);
+    const keys = ['a', 'b', 'c', 'd', 'e'];
+    const selected = () => [...context.workspaceDraftProjects].sort();
+
+    assert.equal(context.toggleWorkspaceChoiceRange(keys, 'c'), false, 'no anchor yet');
+    context.workspaceChoiceAnchor = 'b';
+    assert.equal(context.toggleWorkspaceChoiceRange(keys, 'd'), true);
+    assert.deepEqual(selected(), ['b', 'c', 'd']);
+
+    // Clicking a ticked row clears the range, including rows already clear.
+    context.workspaceChoiceAnchor = 'e';
+    context.toggleWorkspaceChoiceRange(keys, 'c');
+    assert.deepEqual(selected(), ['b']);
+
+    // Ranges work upwards too.
+    context.workspaceChoiceAnchor = 'd';
+    context.toggleWorkspaceChoiceRange(keys, 'a');
+    assert.deepEqual(selected(), ['a', 'b', 'c', 'd']);
+
+    // With a filter applied, only visible rows change, and a hidden anchor
+    // does not extend.
+    context.workspaceDraftProjects.clear();
+    context.workspaceChoiceAnchor = 'b';
+    assert.equal(context.toggleWorkspaceChoiceRange(['a', 'c', 'e'], 'e'), false);
+    context.workspaceChoiceAnchor = 'a';
+    context.toggleWorkspaceChoiceRange(['a', 'c', 'e'], 'e');
+    assert.deepEqual(selected(), ['a', 'c', 'e']);
+});
+
+test('Shift-clicking rendered project rows ticks a range and updates the count', () => {
+    const element = () => ({
+        children: [], dataset: {}, listeners: {},
+        append(...items) { this.children.push(...items); },
+        appendChild(item) { this.children.push(item); },
+        addEventListener(type, listener) { this.listeners[type] = listener; },
+    });
+    const list = {
+        ...element(),
+        set innerHTML(_) { this.children = []; },
+        querySelectorAll: () => list.children.map(row => row.children[0]),
+    };
+    const elements = {
+        'workspace-project-choices': list,
+        'workspace-project-filter': { value: '' },
+        'workspace-selected-count': { textContent: '' },
+    };
+    const context = {
+        workspaceChoiceAnchor: null,
+        workspaceDraftProjects: new Set(),
+        workspaceProjectChoices: () => ['org/a', 'org/b', 'org/b@task', 'org/c'].map(key => ({ key, label: key, path: '' })),
+        document: { getElementById: id => elements[id], createElement: element },
+        setTimeout: callback => callback(),
+    };
+    vm.runInNewContext(['updateWorkspaceSelectedCount', 'toggleWorkspaceChoiceRange', 'renderWorkspaceProjectChoices'].map(functionSource).join('\n'), context);
+    context.renderWorkspaceProjectChoices();
+
+    // Like a browser: an uncancelled click toggles the box and fires change.
+    const click = (index, shiftKey = false) => {
+        const row = list.children[index];
+        let prevented = false;
+        row.listeners.click({ shiftKey, preventDefault() { prevented = true; } });
+        if (!prevented) {
+            row.children[0].checked = !row.children[0].checked;
+            row.children[0].onchange();
+        }
+        return prevented;
+    };
+    const ticked = () => list.children.map(row => row.children[0].checked);
+
+    assert.equal(click(0), false);
+    assert.equal(click(3, true), true);
+    assert.deepEqual(ticked(), [true, true, true, true]);
+    assert.equal(elements['workspace-selected-count'].textContent, '4 selected');
+
+    assert.equal(click(1, true), true);
+    assert.deepEqual(ticked(), [true, false, false, false]);
+    assert.deepEqual([...context.workspaceDraftProjects], ['org/a']);
+    assert.equal(elements['workspace-selected-count'].textContent, '1 selected');
+});
+
 test('workspace workflow works in the rendered application', { timeout: 60000 }, async t => {
     const repoRoot = path.join(__dirname, '..', '..', '..');
     const binary = path.join(repoRoot, 'electron', 'node_modules', '.bin', 'electron');

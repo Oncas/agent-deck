@@ -19,6 +19,7 @@
     let workspaces = [];
     let workspaceEditingID = null;
     let workspaceDraftProjects = new Set();
+    let workspaceChoiceAnchor = null; // last clicked project key, for Shift-click ranges
     let workspaceSaveQueue = Promise.resolve();
     let workspaceSaving = false;
     let currentCLI = 'claude';
@@ -2526,11 +2527,31 @@ function applyDatabaseState(data) {
         return choices;
     }
 
+    function updateWorkspaceSelectedCount() {
+        document.getElementById('workspace-selected-count').textContent = workspaceDraftProjects.size + ' selected';
+    }
+
+    // Shift-click gives every visible row from the last clicked one to this
+    // one the state the clicked row is switching to, so it can select or clear
+    // a range. Returns false when there is no visible anchor to extend from.
+    function toggleWorkspaceChoiceRange(keys, key) {
+        const from = keys.indexOf(workspaceChoiceAnchor);
+        const to = keys.indexOf(key);
+        if (from < 0 || to < 0) return false;
+        const checked = !workspaceDraftProjects.has(key);
+        for (const item of keys.slice(Math.min(from, to), Math.max(from, to) + 1)) {
+            if (checked) workspaceDraftProjects.add(item);
+            else workspaceDraftProjects.delete(item);
+        }
+        return true;
+    }
+
     function renderWorkspaceProjectChoices() {
         const list = document.getElementById('workspace-project-choices');
         const filter = document.getElementById('workspace-project-filter').value.trim().toLowerCase();
         list.innerHTML = '';
         const choices = workspaceProjectChoices().filter(choice => !filter || (choice.label + ' ' + choice.path).toLowerCase().includes(filter));
+        const keys = choices.map(choice => choice.key);
         for (const choice of choices) {
             const row = document.createElement('label');
             row.className = 'workspace-project-choice';
@@ -2541,8 +2562,22 @@ function applyDatabaseState(data) {
             checkbox.onchange = () => {
                 if (checkbox.checked) workspaceDraftProjects.add(choice.key);
                 else workspaceDraftProjects.delete(choice.key);
-                document.getElementById('workspace-selected-count').textContent = workspaceDraftProjects.size + ' selected';
+                updateWorkspaceSelectedCount();
             };
+            row.addEventListener('click', ev => {
+                if (ev.shiftKey && toggleWorkspaceChoiceRange(keys, choice.key)) {
+                    ev.preventDefault();
+                    // A cancelled checkbox click restores its old state after
+                    // dispatch, so sync the boxes once the click is over.
+                    setTimeout(() => {
+                        list.querySelectorAll('input[type="checkbox"]').forEach(input => {
+                            input.checked = workspaceDraftProjects.has(input.value);
+                        });
+                    });
+                    updateWorkspaceSelectedCount();
+                }
+                workspaceChoiceAnchor = choice.key;
+            });
             const name = document.createElement('span');
             name.textContent = choice.label;
             name.title = choice.path || choice.label;
@@ -2550,7 +2585,7 @@ function applyDatabaseState(data) {
             list.appendChild(row);
         }
         if (!choices.length) list.textContent = 'No matching projects';
-        document.getElementById('workspace-selected-count').textContent = workspaceDraftProjects.size + ' selected';
+        updateWorkspaceSelectedCount();
     }
 
     async function openWorkspaceDialog(id = '') {
@@ -2558,6 +2593,7 @@ function applyDatabaseState(data) {
         const workspace = workspaces.find(item => item.id === id);
         workspaceEditingID = workspace ? id : '';
         workspaceDraftProjects = new Set(workspace?.projects || []);
+        workspaceChoiceAnchor = null;
         const modal = document.getElementById('workspace-modal');
         document.getElementById('workspace-modal-title').textContent = workspace ? 'Manage workspace' : 'New workspace';
         document.getElementById('workspace-name').value = workspace?.name || '';

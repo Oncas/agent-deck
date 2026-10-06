@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -161,12 +162,16 @@ func (h *wsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			rows = ro
 		}
 		var createErr error
-		path, pathErr := h.api.resolveProjectPath(name)
-		if pathErr != nil {
-			conn.Close(websocket.StatusInternalError, pathErr.Error())
-			return
+		if strings.HasPrefix(name, workspaceSessionPrefix) {
+			session, createErr = h.api.startWorkspaceSession(strings.TrimPrefix(name, workspaceSessionPrefix), uint16(cols), uint16(rows), r.URL.Query().Get("cli"), false)
+		} else {
+			path, pathErr := h.api.resolveProjectPath(name)
+			if pathErr != nil {
+				conn.Close(websocket.StatusInternalError, pathErr.Error())
+				return
+			}
+			session, createErr = h.manager.GetOrCreate(name, path, uint16(cols), uint16(rows), r.URL.Query().Get("cli"))
 		}
-		session, createErr = h.manager.GetOrCreate(name, path, uint16(cols), uint16(rows), r.URL.Query().Get("cli"))
 		if createErr != nil {
 			log.Printf("session create error for %s: %v", name, createErr)
 			conn.Close(websocket.StatusInternalError, "failed to create session")

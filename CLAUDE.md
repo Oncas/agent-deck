@@ -107,8 +107,9 @@ electron/
 - `POST /api/rescan` — Re-scan projects directory
 - `GET|POST /api/workspaces`, `PATCH|DELETE /api/workspaces/{id}` — Named
   multi-project workspaces. Each has one terminal session, `workspace:<id>`,
-  started in its fixed `working_directory`; the tracked `projects` and
-  `active_project` only choose what the Git panel shows. `POST
+  started in its fixed `working_directory` (a leading `~/` is expanded); the
+  tracked `projects` and `active_project` only choose what the Git panel
+  shows. `POST
   /api/workspaces/{id}/terminal/{start,stop}` and `GET .../terminal/output`
   control that session, and `/ws/workspace:<id>` attaches to it.
 

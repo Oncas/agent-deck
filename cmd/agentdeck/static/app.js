@@ -2579,9 +2579,21 @@ function applyDatabaseState(data) {
                 workspaceChoiceAnchor = choice.key;
             });
             const name = document.createElement('span');
+            name.className = 'workspace-choice-name';
             name.textContent = choice.label;
             name.title = choice.path || choice.label;
             row.append(checkbox, name);
+            if (choice.path) {
+                // The folder the project lives in, cut from the left when long
+                // so the part nearest the project stays readable.
+                const folder = document.createElement('span');
+                folder.className = 'workspace-choice-folder';
+                folder.title = choice.path;
+                const text = document.createElement('bdi');
+                text.textContent = choice.path.replace(/\/+[^/]+\/*$/, '') || '/';
+                folder.appendChild(text);
+                row.append(folder);
+            }
             list.appendChild(row);
         }
         if (!choices.length) list.textContent = 'No matching projects';

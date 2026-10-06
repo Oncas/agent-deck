@@ -607,7 +607,8 @@
                             <div class="settings-row-desc">Shown next to the project name in the sidebar, which can filter by them. Separate several labels with commas.</div>
                             <div id="settings-tags-list"></div>
                             <div class="settings-tags-add">
-                                <input type="text" id="settings-tags-project" placeholder="project name">
+                                <input type="text" id="settings-tags-project" list="settings-tags-project-options" placeholder="project name" autocomplete="off">
+                                <datalist id="settings-tags-project-options"></datalist>
                                 <input type="text" id="settings-tags-value" placeholder="frontend, payments">
                                 <button id="settings-tags-add-btn">Add</button>
                             </div>

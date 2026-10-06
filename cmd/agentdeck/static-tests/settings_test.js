@@ -423,3 +423,38 @@ test('a period with unpriced models marks its cost as a lower bound', () => {
     assert.match(html, /No price known for gpt-9-nova/);
     assert.doesNotMatch(html, /\$40\.00\+/);
 });
+
+test('project label suggestions list scanned projects and fill in existing labels', () => {
+    const options = {
+        children: [],
+        set innerHTML(_) { this.children = []; },
+        appendChild(child) { this.children.push(child); },
+    };
+    const elements = {
+        'settings-tags-project-options': options,
+        'settings-tags-project': { value: ' shop-api ' },
+        'settings-tags-value': { value: '' },
+    };
+    const context = {
+        projects: [{ name: 'shop-web' }, { name: 'shop-api' }],
+        settingsProjectTags: { 'shop-api': ['backend', 'payments'] },
+        document: { getElementById: id => elements[id], createElement: () => ({}) },
+    };
+    vm.runInNewContext(['renderProjectLabelSuggestions', 'prefillProjectLabels'].map(functionSource).join('\n'), context);
+
+    context.renderProjectLabelSuggestions();
+    assert.deepEqual(options.children.map(option => [option.value, option.label]), [
+        ['shop-api', 'backend, payments'],
+        ['shop-web', undefined],
+    ]);
+
+    context.prefillProjectLabels();
+    assert.equal(elements['settings-tags-value'].value, 'backend, payments');
+    // Labels the user has already typed are never overwritten.
+    elements['settings-tags-value'].value = 'frontend';
+    context.prefillProjectLabels();
+    assert.equal(elements['settings-tags-value'].value, 'frontend');
+
+    assert.match(indexHtml, /id="settings-tags-project" list="settings-tags-project-options"/);
+    assert.match(indexHtml, /<datalist id="settings-tags-project-options"><\/datalist>/);
+});

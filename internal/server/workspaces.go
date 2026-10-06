@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 
 	"agentdeck/internal/config"
 	ptyPkg "agentdeck/internal/pty"
@@ -57,20 +59,37 @@ func (a *apiHandler) handleListWorkspaces(w http.ResponseWriter, r *http.Request
 	writeJSON(w, workspaces)
 }
 
+// workspaceDirectory resolves a typed session folder. A leading ~ means the
+// home directory, as it would in a shell; the errors name the path checked
+// because they are shown to the user as typed.
 func workspaceDirectory(path string) (string, error) {
 	path = strings.TrimSpace(path)
-	if !filepath.IsAbs(path) {
-		return "", errors.New("session folder must be an absolute path")
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("session folder: %w", err)
+		}
+		path = filepath.Join(home, path[1:])
 	}
-	path, err := filepath.EvalSymlinks(path)
+	if !filepath.IsAbs(path) {
+		return "", errors.New("session folder must be an absolute path or start with ~/")
+	}
+	path = filepath.Clean(path)
+	info, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		return "", fmt.Errorf("session folder does not exist: %s", path)
+	}
 	if err != nil {
 		return "", fmt.Errorf("session folder: %w", err)
 	}
-	info, err := os.Stat(path)
-	if err != nil || !info.IsDir() {
-		return "", errors.New("session folder must be an existing directory")
+	if !info.IsDir() {
+		return "", fmt.Errorf("session folder is not a folder: %s", path)
 	}
-	return filepath.Clean(path), nil
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("session folder: %w", err)
+	}
+	return resolved, nil
 }
 
 // Keep missing tracked checkouts removable after a rescan. Newly added entries

@@ -550,6 +550,7 @@ func cloneConfig(cfg *config.Config) *config.Config {
 	next.ProjectTags = cloneStringSliceMap(cfg.ProjectTags)
 	next.KeymapProfiles = cloneKeymapProfiles(cfg.KeymapProfiles)
 	next.TabLayouts = cloneTabLayouts(cfg.TabLayouts)
+	next.Workspaces = cloneWorkspaces(cfg.Workspaces)
 	next.CLIIntegrations = cloneCLIIntegrations(cfg.CLIIntegrations)
 	next.DangerousPermissions = cloneBoolMap(cfg.DangerousPermissions)
 	next.Jobs = cloneJobs(cfg.Jobs)
@@ -995,7 +996,25 @@ func (a *apiHandler) handleBadges(w http.ResponseWriter, r *http.Request) {
 	a.mu.RLock()
 	projs := make([]scanner.Project, len(a.projects))
 	copy(projs, a.projects)
+	workspaces := cloneWorkspaces(a.cfg.Workspaces)
 	a.mu.RUnlock()
+
+	// Tracked worktrees need their own counts even without an ordinary tab.
+	seen := make(map[string]bool, len(projs))
+	for _, project := range projs {
+		seen[project.Name] = true
+	}
+	for _, workspace := range workspaces {
+		for _, key := range workspace.Projects {
+			if seen[key] || !strings.Contains(key, "@") {
+				continue
+			}
+			seen[key] = true
+			if path, err := a.resolveProjectPath(key); err == nil {
+				projs = append(projs, scanner.Project{Name: key, Path: path})
+			}
+		}
+	}
 
 	type badge struct {
 		DirtyCount int  `json:"dirty_count"`

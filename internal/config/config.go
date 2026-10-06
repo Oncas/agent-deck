@@ -16,6 +16,7 @@ type Config struct {
 	OpenTabs           []string             `json:"open_tabs,omitempty"`
 	ActiveTab          string               `json:"active_tab,omitempty"`
 	TabLayouts         map[string]TabLayout `json:"tab_layouts,omitempty"`
+	Workspaces         []Workspace          `json:"workspaces,omitempty"`
 	Theme              string               `json:"theme,omitempty"`
 	TerminalFontSize   int                  `json:"terminal_font_size,omitempty"` // 0 = use frontend default
 	CLI                string               `json:"cli,omitempty"`                // "claude" (default), "cursor", "openai", "gemini", "opencode", "kimi", or custom integration id
@@ -62,6 +63,16 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 type TabLayout struct {
 	FocusedPane string    `json:"focused_pane,omitempty"`
 	Panes       []TabPane `json:"panes,omitempty"`
+}
+
+// Workspace tracks repositories independently of its single terminal session.
+// Changing Projects or ActiveProject never changes the terminal's directory.
+type Workspace struct {
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	WorkingDirectory string   `json:"working_directory"`
+	Projects         []string `json:"projects"`
+	ActiveProject    string   `json:"active_project"`
 }
 
 type TabPane struct {

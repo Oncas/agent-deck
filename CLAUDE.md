@@ -105,6 +105,12 @@ electron/
 - `GET|POST /api/config` — Configuration
 - `POST /api/projects/{name}/restart` — Restart PTY session
 - `POST /api/rescan` — Re-scan projects directory
+- `GET|POST /api/workspaces`, `PATCH|DELETE /api/workspaces/{id}` — Named
+  multi-project workspaces. Each has one terminal session, `workspace:<id>`,
+  started in its fixed `working_directory`; the tracked `projects` and
+  `active_project` only choose what the Git panel shows. `POST
+  /api/workspaces/{id}/terminal/{start,stop}` and `GET .../terminal/output`
+  control that session, and `/ws/workspace:<id>` attaches to it.
 
 Every request passes `localRequestsOnly` (`internal/server/local_requests.go`)
 first: the `Host` must be loopback, `Sec-Fetch-Site` must be `same-origin` or

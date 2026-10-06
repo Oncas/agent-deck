@@ -8099,6 +8099,7 @@ function readSettingsDangerousPermissions() {
 		});
 	});
 	document.getElementById('settings-tags-add-btn').onclick = addProjectTags;
+        document.getElementById('settings-tags-project').addEventListener('input', prefillProjectLabels);
         document.getElementById('settings-tags-value').addEventListener('keydown', ev => {
             if (ev.key === 'Enter') addProjectTags();
         });
@@ -8411,6 +8412,30 @@ function readSettingsDangerousPermissions() {
             item.appendChild(removeBtn);
             list.appendChild(item);
         });
+        renderProjectLabelSuggestions();
+    }
+
+    // Suggest scanned projects in the name field, each with its current labels,
+    // so a label can't be attached to a mistyped name.
+    function renderProjectLabelSuggestions() {
+        const options = document.getElementById('settings-tags-project-options');
+        if (!options) return;
+        options.innerHTML = '';
+        [...projects].sort((a, b) => a.name.localeCompare(b.name)).forEach(project => {
+            const option = document.createElement('option');
+            option.value = project.name;
+            const labels = settingsProjectTags[project.name];
+            if (Array.isArray(labels) && labels.length) option.label = labels.join(', ');
+            options.appendChild(option);
+        });
+    }
+
+    // Picking a project that already has labels fills them in, because Add
+    // replaces a project's labels rather than adding to them.
+    function prefillProjectLabels() {
+        const labels = settingsProjectTags[document.getElementById('settings-tags-project').value.trim()];
+        const valueInput = document.getElementById('settings-tags-value');
+        if (Array.isArray(labels) && !valueInput.value.trim()) valueInput.value = labels.join(', ');
     }
 
     function addProjectTags() {

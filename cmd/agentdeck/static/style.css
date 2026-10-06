@@ -7164,6 +7164,29 @@ html[data-theme="light"] .editor-image-preview-stage {
     color: var(--accent);
 }
 
+/* Settings -> Project labels: name on the left, its current labels dimmed on
+   the right, like the workspace picker's folders. */
+.project-label-suggestion {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+}
+
+.project-label-suggestion-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.project-label-suggestion-labels {
+    margin-left: auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--text-dim);
+    font-size: 11px;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
     width: 6px;

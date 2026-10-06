@@ -8099,7 +8099,19 @@ function readSettingsDangerousPermissions() {
 		});
 	});
 	document.getElementById('settings-tags-add-btn').onclick = addProjectTags;
-        document.getElementById('settings-tags-project').addEventListener('input', prefillProjectLabels);
+        const labelProjectInput = document.getElementById('settings-tags-project');
+        labelProjectInput.addEventListener('focus', () => showProjectLabelSuggestions());
+        labelProjectInput.addEventListener('input', () => {
+            showProjectLabelSuggestions(!!labelProjectInput.value.trim());
+            prefillProjectLabels();
+        });
+        labelProjectInput.addEventListener('keydown', handleProjectLabelSuggestionKeydown);
+        labelProjectInput.addEventListener('blur', hideProjectLabelSuggestions);
+        // The list is placed under the field once, so close it when Settings
+        // scrolls instead of leaving it behind; scrolling the list itself is fine.
+        document.addEventListener('scroll', ev => {
+            if (projectLabelSuggest && ev.target !== projectLabelSuggest.dropdown) hideProjectLabelSuggestions();
+        }, true);
         document.getElementById('settings-tags-value').addEventListener('keydown', ev => {
             if (ev.key === 'Enter') addProjectTags();
         });
@@ -8412,22 +8424,108 @@ function readSettingsDangerousPermissions() {
             item.appendChild(removeBtn);
             list.appendChild(item);
         });
-        renderProjectLabelSuggestions();
     }
 
-    // Suggest scanned projects in the name field, each with its current labels,
-    // so a label can't be attached to a mistyped name.
-    function renderProjectLabelSuggestions() {
-        const options = document.getElementById('settings-tags-project-options');
-        if (!options) return;
-        options.innerHTML = '';
-        [...projects].sort((a, b) => a.name.localeCompare(b.name)).forEach(project => {
-            const option = document.createElement('option');
-            option.value = project.name;
-            const labels = settingsProjectTags[project.name];
-            if (Array.isArray(labels) && labels.length) option.label = labels.join(', ');
-            options.appendChild(option);
+    // Suggest scanned projects in the label form's name field, each with its
+    // current labels, so a label can't be attached to a mistyped name. It
+    // reuses the branch autocomplete's look and keys rather than a <datalist>,
+    // whose popup the browser draws outside the theme.
+    let projectLabelSuggest = null; // { items, highlightedIndex, dropdown }
+
+    function projectLabelSuggestionItems(query) {
+        const needle = query.trim().toLowerCase();
+        return projects.map(project => project.name)
+            .filter(name => !needle || name.toLowerCase().includes(needle))
+            .sort((a, b) => a.localeCompare(b));
+    }
+
+    function showProjectLabelSuggestions(highlightFirst = false) {
+        const input = document.getElementById('settings-tags-project');
+        if (!input) return;
+        const items = projectLabelSuggestionItems(input.value);
+        if (items.length === 0) {
+            hideProjectLabelSuggestions();
+            return;
+        }
+        const previous = projectLabelSuggest;
+        let highlightedIndex = highlightFirst ? 0 : (previous ? previous.highlightedIndex : -1);
+        if (highlightedIndex >= items.length) highlightedIndex = items.length - 1;
+        previous?.dropdown?.remove();
+
+        const dropdown = document.createElement('div');
+        dropdown.className = 'branch-autocomplete';
+        const rect = input.getBoundingClientRect();
+        dropdown.style.left = rect.left + 'px';
+        dropdown.style.top = rect.bottom + 'px';
+        dropdown.style.width = rect.width + 'px';
+        items.forEach((name, index) => {
+            const item = document.createElement('div');
+            item.className = 'branch-autocomplete-item project-label-suggestion' + (index === highlightedIndex ? ' highlighted' : '');
+            const nameText = document.createElement('span');
+            nameText.className = 'project-label-suggestion-name';
+            nameText.textContent = name;
+            item.appendChild(nameText);
+            const labels = settingsProjectTags[name];
+            if (Array.isArray(labels) && labels.length) {
+                const labelText = document.createElement('span');
+                labelText.className = 'project-label-suggestion-labels';
+                labelText.textContent = labels.join(', ');
+                item.appendChild(labelText);
+            }
+            item.onmousedown = ev => {
+                ev.preventDefault(); // keep focus in the field
+                applyProjectLabelSuggestion(name);
+            };
+            dropdown.appendChild(item);
         });
+        document.body.appendChild(dropdown);
+        dropdown.children[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
+        projectLabelSuggest = { items, highlightedIndex, dropdown };
+    }
+
+    function moveProjectLabelSuggestion(delta) {
+        if (!projectLabelSuggest) {
+            showProjectLabelSuggestions(true);
+            return;
+        }
+        const count = projectLabelSuggest.items.length;
+        const current = projectLabelSuggest.highlightedIndex;
+        projectLabelSuggest.highlightedIndex = current < 0
+            ? (delta > 0 ? 0 : count - 1)
+            : (current + delta + count) % count;
+        showProjectLabelSuggestions();
+    }
+
+    function applyProjectLabelSuggestion(name) {
+        document.getElementById('settings-tags-project').value = name;
+        hideProjectLabelSuggestions();
+        prefillProjectLabels();
+        document.getElementById('settings-tags-value').focus();
+    }
+
+    function hideProjectLabelSuggestions() {
+        projectLabelSuggest?.dropdown?.remove();
+        projectLabelSuggest = null;
+    }
+
+    function handleProjectLabelSuggestionKeydown(ev) {
+        if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+            ev.preventDefault();
+            moveProjectLabelSuggestion(ev.key === 'ArrowDown' ? 1 : -1);
+        } else if (ev.key === 'Enter' && projectLabelSuggest) {
+            const name = projectLabelSuggest.items[projectLabelSuggest.highlightedIndex];
+            if (name) {
+                ev.preventDefault();
+                applyProjectLabelSuggestion(name);
+            }
+        } else if (ev.key === 'Escape' && projectLabelSuggest) {
+            // Close the list, not the Settings window behind it.
+            ev.preventDefault();
+            ev.stopPropagation();
+            hideProjectLabelSuggestions();
+        } else if (ev.key === 'Tab') {
+            hideProjectLabelSuggestions();
+        }
     }
 
     // Picking a project that already has labels fills them in, because Add

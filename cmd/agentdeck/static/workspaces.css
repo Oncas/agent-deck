@@ -188,6 +188,7 @@
     cursor: pointer;
     overflow-wrap: anywhere;
     font-size: 12px;
+    user-select: none; /* Shift-click selects a range of rows, not text */
 }
 
 .workspace-project-choice:hover {

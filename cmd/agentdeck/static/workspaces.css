@@ -200,6 +200,24 @@
     flex-shrink: 0;
 }
 
+.workspace-choice-name {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+/* Right-aligned and dimmed. rtl puts the ellipsis on the left of a long
+   path; the <bdi> inside keeps the path's own characters in order. */
+.workspace-choice-folder {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    direction: rtl;
+    color: var(--text-dim);
+    font-size: 11px;
+}
+
 #workspace-error {
     color: var(--red);
     font-size: 12px;

@@ -213,7 +213,12 @@ test('Shift-clicking rendered project rows ticks a range and updates the count',
     const context = {
         workspaceChoiceAnchor: null,
         workspaceDraftProjects: new Set(),
-        workspaceProjectChoices: () => ['org/a', 'org/b', 'org/b@task', 'org/c'].map(key => ({ key, label: key, path: '' })),
+        workspaceProjectChoices: () => [
+            { key: 'org/a', label: 'org/a', path: '/src/org/a' },
+            { key: 'org/b', label: 'org/b', path: '/src/org/b/' },
+            { key: 'org/b@task', label: 'org/b (task)', path: '/src/.worktrees/b--task' },
+            { key: 'org/c', label: 'org/c (unavailable)', path: '' },
+        ],
         document: { getElementById: id => elements[id], createElement: element },
         setTimeout: callback => callback(),
     };
@@ -232,6 +237,12 @@ test('Shift-clicking rendered project rows ticks a range and updates the count',
         return prevented;
     };
     const ticked = () => list.children.map(row => row.children[0].checked);
+
+    // Each row shows the folder its project lives in; unknown paths show none.
+    assert.deepEqual(list.children.map(row => row.children[2]?.children[0].textContent), [
+        '/src/org', '/src/org', '/src/.worktrees', undefined,
+    ]);
+    assert.equal(list.children[2].children[2].title, '/src/.worktrees/b--task');
 
     assert.equal(click(0), false);
     assert.equal(click(3, true), true);

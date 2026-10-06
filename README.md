@@ -84,6 +84,11 @@ version, distro/version, desktop and X11/Wayland session in a
 
 - **Tabs per project or worktree**, each running your AI CLI. Split a tab to run
   a second agent next to the first, with a different CLI if you like.
+- **Workspaces** for work that spans several repos: one AI session in a folder
+  you choose (usually their shared parent), plus a list of tracked projects and
+  worktrees. Pick a tracked project to point the Git panel, diffs and editor at
+  it; the session keeps running. Create one from **Workspaces -> + New** in the
+  sidebar and change what it tracks with **Manage**.
 - **Restart and resume** a session's last conversation, for CLIs that support it.
 - **Live status** per session (working, waiting for permission, idle, done but
   not looked at), with desktop notifications.

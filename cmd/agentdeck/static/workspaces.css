@@ -1,0 +1,228 @@
+#workspace-section {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.workspace-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-dim);
+    font-size: 11px;
+    margin-bottom: 8px;
+}
+
+#workspace-section button,
+#workspace-git-controls button,
+#workspace-form button {
+    font: inherit;
+    color: var(--text);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 5px 9px;
+    cursor: pointer;
+}
+
+#workspace-section button:hover,
+#workspace-git-controls button:hover,
+#workspace-form button:hover {
+    background: var(--bg-hover);
+}
+
+#workspace-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.workspace-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    border-radius: 5px;
+    margin-top: 3px;
+}
+
+.workspace-item.active {
+    background: var(--bg-hover);
+    box-shadow: inset 2px 0 var(--accent);
+}
+
+#workspace-section .workspace-open {
+    min-width: 0;
+    flex: 1;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: transparent;
+    border-color: transparent;
+}
+
+.workspace-project-count {
+    color: var(--text-dim);
+    font-size: 11px;
+}
+
+#workspace-section .workspace-edit {
+    background: transparent;
+    border-color: transparent;
+    padding: 4px;
+    display: flex;
+}
+
+.workspace-edit svg {
+    width: 14px;
+    height: 14px;
+}
+
+#workspace-git-controls {
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+#workspace-git-controls > label {
+    font-size: 11px;
+    color: var(--text-dim);
+}
+
+.workspace-switcher-row,
+.workspace-folder-row {
+    display: flex;
+    gap: 8px;
+}
+
+#workspace-project-select,
+#workspace-form input:not([type=checkbox]) {
+    min-width: 0;
+    width: 100%;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 8px;
+    font: inherit;
+}
+
+#workspace-project-select {
+    flex: 1;
+    text-overflow: ellipsis;
+}
+
+#workspace-form input:focus,
+#workspace-project-select:focus {
+    outline: 1px solid var(--accent);
+}
+
+#workspace-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 350;
+    align-items: center;
+    justify-content: center;
+}
+
+#workspace-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+#workspace-form {
+    position: relative;
+    width: min(580px, calc(100vw - 40px));
+    max-height: calc(100vh - 60px);
+    overflow-y: auto;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    box-shadow: 0 16px 60px rgba(0, 0, 0, 0.4);
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#workspace-form h2 {
+    font-size: 16px;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.workspace-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+}
+
+.workspace-note {
+    color: var(--text-dim);
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+#workspace-form .workspace-section-header {
+    margin: 8px 0 0;
+}
+
+#workspace-project-choices {
+    height: 220px;
+    min-height: 100px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 4px;
+}
+
+.workspace-project-choice {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+}
+
+.workspace-project-choice:hover {
+    background: var(--bg-hover);
+}
+
+.workspace-project-choice input {
+    accent-color: var(--accent);
+    flex-shrink: 0;
+}
+
+#workspace-error {
+    color: var(--red);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+.workspace-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+#workspace-form #workspace-save {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+#workspace-form #workspace-delete {
+    margin-right: auto;
+    color: var(--red);
+}
+
+#workspace-form button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}

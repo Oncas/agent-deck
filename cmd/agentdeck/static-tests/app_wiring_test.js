@@ -1826,6 +1826,8 @@ test('diff comments send structured file, line, side, and comment data to the fo
     `, {
         assert,
         activeTab: 'project-a',
+        workspaceForTab: () => null,
+        isWorkspaceTab: () => false,
         getTerminalEntry: projectName => {
             requestedProjects.push(projectName);
             return terminal;

@@ -225,3 +225,22 @@ func TestJobCommandRejectsCustomIntegration(t *testing.T) {
 		t.Fatalf("JobCommand(custom) = %q, want error", got)
 	}
 }
+
+func TestClaudeGetsAddDirForEachExtraDirectory(t *testing.T) {
+	options := StartOptions{AddDirs: []string{"/src/web", "/src/it's here"}}
+	want := `claude --add-dir '/src/web' --add-dir '/src/it'"'"'s here'`
+	if got := StartCommandWithOptions("claude", false, options); got != want {
+		t.Errorf("claude = %q, want %q", got, want)
+	}
+	want = `claude --dangerously-skip-permissions --add-dir '/src/web' --add-dir '/src/it'"'"'s here'`
+	if got := StartCommandWithOptions("claude", true, options); got != want {
+		t.Errorf("dangerous claude = %q, want %q", got, want)
+	}
+	// Other CLIs and custom integrations take no such flag.
+	options.CLIIntegrations = map[string]CLIIntegration{"custom": {ID: "custom", Command: "wrapper start"}}
+	for cli, want := range map[string]string{"openai": "codex", "gemini": "gemini", "custom": "wrapper start"} {
+		if got := StartCommandWithOptions(cli, false, options); got != want {
+			t.Errorf("%s = %q, want %q", cli, got, want)
+		}
+	}
+}

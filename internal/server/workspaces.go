@@ -240,19 +240,56 @@ func (a *apiHandler) handleDeleteWorkspace(w http.ResponseWriter, r *http.Reques
 }
 
 func (a *apiHandler) startWorkspaceSession(id string, cols, rows uint16, cli string, resume bool) (*ptyPkg.Session, error) {
-	// Serialize session creation with deletion of its workspace definition.
 	a.mu.RLock()
-	defer a.mu.RUnlock()
 	ws := findWorkspace(a.cfg, id)
+	var folder string
+	var tracked []string
+	if ws != nil {
+		folder, tracked = ws.WorkingDirectory, slices.Clone(ws.Projects)
+	}
+	a.mu.RUnlock()
 	if ws == nil {
 		return nil, errWorkspaceNotFound
 	}
-	if _, err := workspaceDirectory(ws.WorkingDirectory); err != nil {
+	dir, err := workspaceDirectory(folder)
+	if err != nil {
 		return nil, err
 	}
-	return a.manager.GetOrCreateWithOptions(workspaceSessionKey(id), ws.WorkingDirectory, cols, rows, cli, ptyPkg.StartOptions{
-		ResumeLast: resume, SkipStartupGitPull: true,
+	// Resolved outside a.mu: finding a worktree runs git, and project lookups
+	// take the lock themselves.
+	addDirs := a.workspaceAddDirs(tracked, dir)
+
+	// Serialize session creation with deletion of its workspace definition.
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if findWorkspace(a.cfg, id) == nil {
+		return nil, errWorkspaceNotFound
+	}
+	return a.manager.GetOrCreateWithOptions(workspaceSessionKey(id), dir, cols, rows, cli, ptyPkg.StartOptions{
+		ResumeLast: resume, SkipStartupGitPull: true, AddDirs: addDirs,
 	})
+}
+
+// workspaceAddDirs resolves a workspace's tracked checkouts for the CLI's
+// --add-dir, so an agent started in the session folder can use them wherever
+// they live. Missing checkouts are skipped, and the session folder is the
+// agent's own already.
+func (a *apiHandler) workspaceAddDirs(projects []string, sessionDir string) []string {
+	dirs := make([]string, 0, len(projects))
+	for _, key := range projects {
+		path, err := a.resolveProjectPath(key)
+		if err != nil {
+			continue
+		}
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			path = resolved
+		}
+		if path == sessionDir || slices.Contains(dirs, path) {
+			continue
+		}
+		dirs = append(dirs, path)
+	}
+	return dirs
 }
 
 func (a *apiHandler) workspaceTerminalKey(w http.ResponseWriter, r *http.Request) (string, bool) {

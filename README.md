@@ -87,8 +87,11 @@ version, distro/version, desktop and X11/Wayland session in a
 - **Workspaces** for work that spans several repos: one AI session in a folder
   you choose (usually their shared parent), plus a list of tracked projects and
   worktrees. Pick a tracked project to point the Git panel, diffs and editor at
-  it; the session keeps running. Create one from **Workspaces -> + New** in the
-  sidebar and change what it tracks with **Manage**.
+  it; the session keeps running. Claude sessions also get access to every
+  tracked project (`--add-dir`), even ones outside the session folder; changes
+  to what is tracked reach a running session when it restarts. Create one from
+  **Workspaces -> + New** in the sidebar and change what it tracks with
+  **Manage**.
 - **Restart and resume** a session's last conversation, for CLIs that support it.
 - **Live status** per session (working, waiting for permission, idle, done but
   not looked at), with desktop notifications.

@@ -14,6 +14,9 @@ type StartOptions struct {
 	StartupGitPullFFOnly bool
 	SkipStartupGitPull   bool
 	CLIIntegrations      map[string]CLIIntegration
+	// AddDirs are directories outside the session folder that the agent may
+	// use too, such as a workspace's tracked projects. Only Claude takes them.
+	AddDirs []string
 }
 
 // StartCommand returns the shell command used to launch an interactive CLI
@@ -72,11 +75,19 @@ func StartCommandWithOptions(cli string, dangerous bool, options StartOptions) s
 		}
 		return "gemini"
 	default:
+		command := "claude"
 		if dangerous {
-			return "claude --dangerously-skip-permissions"
+			command += " --dangerously-skip-permissions"
 		}
-		return "claude"
+		for _, dir := range options.AddDirs {
+			command += " --add-dir " + shellQuote(dir)
+		}
+		return command
 	}
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }
 
 // JobCommand returns the shell command that runs one prompt to completion

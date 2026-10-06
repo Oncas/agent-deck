@@ -333,3 +333,37 @@ func TestCreateWorkspaceStoresExpandedFolderAndRejectsMissingOne(t *testing.T) {
 		t.Fatalf("create with missing folder = %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestWorkspaceAddDirsResolveTrackedCheckouts(t *testing.T) {
+	api, _ := workspaceTestAPI(t)
+	session := t.TempDir()
+	inside := filepath.Join(session, "inside")
+	if err := os.Mkdir(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link-to-a")
+	if err := os.Symlink(api.projects[0].Path, link); err != nil {
+		t.Fatal(err)
+	}
+	api.projects = append(api.projects,
+		scanner.Project{Name: "org/inside", Path: inside},
+		scanner.Project{Name: "org/session", Path: session},
+		scanner.Project{Name: "org/link", Path: link},
+	)
+	resolve := func(path string) string {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resolved
+	}
+	sessionDir := resolve(session)
+
+	got := api.workspaceAddDirs([]string{"org/a", "org/b", "org/inside", "org/session", "org/link", "org/missing"}, sessionDir)
+	// The session folder is the agent's own, a symlink to a tracked checkout
+	// adds nothing new, and a missing checkout is skipped.
+	want := []string{resolve(api.projects[0].Path), resolve(api.projects[1].Path), resolve(inside)}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("workspaceAddDirs = %q, want %q", got, want)
+	}
+}

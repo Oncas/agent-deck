@@ -15,6 +15,12 @@
     let projects = [];
     let activeProject = null; // repository shown by Git, editor, and project actions
     let activeTab = null;     // tab owning the focused terminal session
+    let tabSwitchRequestSeq = 0;
+    let workspaces = [];
+    let workspaceEditingID = null;
+    let workspaceDraftProjects = new Set();
+    let workspaceSaveQueue = Promise.resolve();
+    let workspaceSaving = false;
     let currentCLI = 'claude';
     let gitPollTimer = null;
     let gitPollIntervalMs = 0;
@@ -1055,6 +1061,8 @@ function applyDatabaseState(data) {
             el.textContent = 'Jobs';
         } else if (databaseActive) {
             el.textContent = 'Database';
+        } else if (workspaceForTab(activeTab)) {
+            el.textContent = workspaceForTab(activeTab).name + (activeProject ? ' · ' + commandProjectLabel(activeProject) : '');
         } else if (activeProject) {
             el.textContent = activeProject;
         } else {
@@ -1350,6 +1358,7 @@ function applyDatabaseState(data) {
 
     async function init() {
         initWindowChrome();
+        initWorkspaces();
         hydrateIcons();
         await ensureTerminalFontLoaded();
         await initTheme();
@@ -1390,6 +1399,8 @@ function applyDatabaseState(data) {
         if (cfgData.theme) {
             setThemeMode(cfgData.theme);
         }
+        workspaces = Array.isArray(cfgData.workspaces) ? cfgData.workspaces : [];
+        renderWorkspaceList();
         const savedTabs = cfgData.open_tabs || [];
         const savedActive = cfgData.active_tab || '';
         const savedLayouts = cfgData.tab_layouts || {};
@@ -1399,7 +1410,8 @@ function applyDatabaseState(data) {
         // project alone is not enough. Restoring a stale tab would keep the UI
         // stuck reconnecting a WebSocket that the backend can never resolve.
         const wtParents = new Set();
-        for (const t of savedTabs) {
+        const trackedProjects = workspaces.flatMap(workspace => workspace.projects || []);
+        for (const t of [...savedTabs, ...trackedProjects]) {
             if (t.includes('@')) {
                 const parentName = t.split('@', 2)[0];
                 if (projectNames.has(parentName)) wtParents.add(parentName);
@@ -1408,6 +1420,7 @@ function applyDatabaseState(data) {
         await Promise.all([...wtParents].map(name => fetchWorktrees(name)));
 
         const validTabs = savedTabs.filter(t => {
+            if (isWorkspaceTab(t)) return !!workspaceForTab(t);
             if (projectNames.has(t)) return true;
             if (t.includes('@')) {
                 const [parentName, wtName] = t.split('@', 2);
@@ -1805,6 +1818,7 @@ function applyDatabaseState(data) {
         try {
             badges = await fetchJSON('/api/badges');
             renderProjectList();
+            renderWorkspaceControls();
         } catch {
             // ignore
         }
@@ -2252,9 +2266,11 @@ function applyDatabaseState(data) {
     }
 
     async function switchProject(name, options = {}) {
+        const requestSeq = ++tabSwitchRequestSeq;
         if (overviewActive) hideOverview();
         if (jobsActive) hideJobs();
         if (databaseActive) hideDatabase();
+        if (isWorkspaceTab(name)) return openWorkspaceTab(name, { ...options, requestSeq });
         if (activeTab === name) {
             if (markTabCompletionSeen(name)) {
                 updateSessionIndicators();
@@ -2304,11 +2320,365 @@ function applyDatabaseState(data) {
         // Docker section
         updateDockerSection();
         updateSidePanels();
+        renderWorkspaceControls();
+        renderWorkspaceList();
     }
 
 
+    // ─── Multi-project workspaces ───────────────────────────────────
+    function isWorkspaceTab(key) {
+        return typeof key === 'string' && key.startsWith('workspace:');
+    }
+
+    function workspaceForTab(key = activeTab) {
+        if (!isWorkspaceTab(key)) return null;
+        return workspaces.find(workspace => 'workspace:' + workspace.id === key) || null;
+    }
+
     function terminalAPIBase(tabKey) {
-        return '/api/projects/' + encodeURIComponent(tabKey);
+        return isWorkspaceTab(tabKey)
+            ? '/api/workspaces/' + encodeURIComponent(tabKey.slice('workspace:'.length))
+            : '/api/projects/' + encodeURIComponent(tabKey);
+    }
+
+    function saveWorkspacePatch(id, patch) {
+        // Serialize metadata writes so rapid project switches persist in order.
+        // These requests never send input to or restart the terminal.
+        const request = workspaceSaveQueue.catch(() => {}).then(() => fetchJSON('/api/workspaces/' + encodeURIComponent(id), {
+            method: 'PATCH',
+            timeoutMs: CONFIG_SAVE_TIMEOUT_MS,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(patch),
+        }));
+        workspaceSaveQueue = request;
+        return request;
+    }
+
+    function storeWorkspace(workspace) {
+        const index = workspaces.findIndex(item => item.id === workspace.id);
+        if (index < 0) workspaces.push(workspace);
+        else workspaces[index] = workspace;
+    }
+
+    function workspaceProjectAvailable(key) {
+        if (!key.includes('@')) return projects.some(project => project.name === key);
+        const [parent, worktree] = key.split('@', 2);
+        return projects.some(project => project.name === parent)
+            && (worktreeCache[parent] || []).some(item => item.name === worktree);
+    }
+
+    function renderWorkspaceList() {
+        const list = document.getElementById('workspace-list');
+        if (!list) return;
+        list.innerHTML = '';
+        for (const workspace of workspaces) {
+            const tabKey = 'workspace:' + workspace.id;
+            const row = document.createElement('div');
+            row.className = 'workspace-item' + (tabKey === activeTab ? ' active' : '');
+            const open = document.createElement('button');
+            open.type = 'button';
+            open.className = 'workspace-open';
+            open.title = workspace.working_directory;
+            open.textContent = workspace.name;
+            open.onclick = () => switchProject(tabKey);
+            const count = document.createElement('span');
+            count.className = 'workspace-project-count';
+            count.textContent = String((workspace.projects || []).length);
+            count.title = 'Tracked projects';
+            const edit = document.createElement('button');
+            edit.type = 'button';
+            edit.className = 'workspace-edit';
+            edit.innerHTML = iconHTML('settings');
+            edit.title = 'Manage ' + workspace.name;
+            edit.setAttribute('aria-label', edit.title);
+            edit.onclick = () => openWorkspaceDialog(workspace.id);
+            row.append(open, count, edit);
+            list.appendChild(row);
+        }
+    }
+
+    function renderWorkspaceControls() {
+        const controls = document.getElementById('workspace-git-controls');
+        if (!controls) return;
+        const workspace = workspaceForTab();
+        controls.style.display = workspace && !databaseActive && !jobsActive && !overviewActive ? 'flex' : 'none';
+        if (!workspace) return;
+        const select = document.getElementById('workspace-project-select');
+        const entries = workspace.projects || [];
+        const fingerprint = JSON.stringify(entries.map(key => [key, badges[key]?.dirty_count, workspaceProjectAvailable(key)]));
+        if (select.dataset.options !== fingerprint) {
+            select.dataset.options = fingerprint;
+            select.innerHTML = '';
+            if (entries.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No tracked projects';
+                select.appendChild(option);
+            }
+            for (const key of entries) {
+                const option = document.createElement('option');
+                option.value = key;
+                const count = badges[key]?.dirty_count;
+                const suffix = !workspaceProjectAvailable(key) ? ' · unavailable'
+                    : typeof count === 'number' ? ' · ' + count + ' changed' : '';
+                option.textContent = commandProjectLabel(key) + suffix;
+                select.appendChild(option);
+            }
+        }
+        select.value = workspace.active_project || '';
+        select.disabled = entries.length === 0;
+        select.title = workspace.active_project || 'Choose a tracked project';
+    }
+
+    function refreshWorkspaceGitContext() {
+        const workspace = workspaceForTab();
+        if (!workspace) return;
+        closeDiffModal();
+        closeBranchDropdown();
+        closeCommitModal();
+        activeProject = (workspace.projects || []).includes(workspace.active_project) ? workspace.active_project : null;
+        if (activeProject) {
+            resetGitStatusForProject(activeProject);
+            updateGitStatus({ fresh: true });
+            setGitStatusPollInterval(GIT_STATUS_POLL_INTERVAL_MS);
+        } else {
+            showNoProjectGitState();
+        }
+        renderWorkspaceControls();
+        renderProjectList();
+        updateDockerSection();
+        updateStatusContext();
+    }
+
+    async function selectWorkspaceProject(projectName) {
+        const workspace = workspaceForTab();
+        if (!workspace || !(workspace.projects || []).includes(projectName) || workspace.active_project === projectName) return;
+        const previous = workspace.active_project;
+        workspace.active_project = projectName;
+        refreshWorkspaceGitContext();
+        try {
+            await saveWorkspacePatch(workspace.id, { active_project: projectName });
+        } catch (err) {
+            if (workspace.active_project === projectName) {
+                workspace.active_project = previous;
+                if (workspaceForTab()?.id === workspace.id) refreshWorkspaceGitContext();
+            }
+            showToast('Project selection not saved', compactErrorMessage(err && err.message), 'error', 4200);
+        }
+    }
+
+    async function openWorkspaceTab(tabKey, options = {}) {
+        const workspace = workspaceForTab(tabKey);
+        if (!workspace) return;
+        if (activeTab === tabKey) {
+            markTabCompletionSeen(tabKey);
+            renderTabs();
+            return;
+        }
+        const cli = normalizeCLI(options.initialCLI || currentCLI);
+        if (getPaneKeys(tabKey).length === 0) {
+            try {
+                await fetchJSON(terminalAPIBase(tabKey) + '/terminal/start', {
+                    method: 'POST',
+                    timeoutMs: CONFIG_SAVE_TIMEOUT_MS,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cli: resolveRuntimeCLI(cli) }),
+                });
+            } catch (err) {
+                showToast('Workspace session unavailable', compactErrorMessage(err && err.message), 'error', 5000);
+                return;
+            }
+            if (getPaneKeys(tabKey).length === 0) createTerminal(tabKey, { tabKey, cli });
+        }
+        if (options.requestSeq !== tabSwitchRequestSeq) {
+            setTabVisibility(tabKey, activeTab === tabKey);
+            renderTabs();
+            refreshTerminalContainerLayout();
+            focusActiveTerminalSoon();
+            return;
+        }
+        closeDiffModal();
+        if (activeTab) setTabVisibility(activeTab, false);
+        activeTab = tabKey;
+        setTabVisibility(tabKey, true);
+        markTabCompletionSeen(tabKey);
+        document.getElementById('status-project').textContent = workspace.name;
+        refreshWorkspaceGitContext();
+        renderWorkspaceList();
+        renderTabs();
+        updateSidePanels();
+        refreshTerminalContainerLayout();
+        getPaneKeys(tabKey).forEach(key => safeFit(terminals[key]));
+        focusActiveTerminalSoon();
+    }
+
+    function workspaceProjectChoices() {
+        const choices = [];
+        for (const project of projects) {
+            choices.push({ key: project.name, label: project.name, path: project.path });
+            for (const worktree of worktreeCache[project.name] || []) {
+                choices.push({ key: project.name + '@' + worktree.name, label: project.name + ' (' + worktree.name + ')', path: worktree.path });
+            }
+        }
+        for (const key of workspaceDraftProjects) {
+            if (!choices.some(choice => choice.key === key)) choices.push({ key, label: key + ' · unavailable', path: '' });
+        }
+        return choices;
+    }
+
+    function renderWorkspaceProjectChoices() {
+        const list = document.getElementById('workspace-project-choices');
+        const filter = document.getElementById('workspace-project-filter').value.trim().toLowerCase();
+        list.innerHTML = '';
+        const choices = workspaceProjectChoices().filter(choice => !filter || (choice.label + ' ' + choice.path).toLowerCase().includes(filter));
+        for (const choice of choices) {
+            const row = document.createElement('label');
+            row.className = 'workspace-project-choice';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = choice.key;
+            checkbox.checked = workspaceDraftProjects.has(choice.key);
+            checkbox.onchange = () => {
+                if (checkbox.checked) workspaceDraftProjects.add(choice.key);
+                else workspaceDraftProjects.delete(choice.key);
+                document.getElementById('workspace-selected-count').textContent = workspaceDraftProjects.size + ' selected';
+            };
+            const name = document.createElement('span');
+            name.textContent = choice.label;
+            name.title = choice.path || choice.label;
+            row.append(checkbox, name);
+            list.appendChild(row);
+        }
+        if (!choices.length) list.textContent = 'No matching projects';
+        document.getElementById('workspace-selected-count').textContent = workspaceDraftProjects.size + ' selected';
+    }
+
+    async function openWorkspaceDialog(id = '') {
+        if (workspaceSaving) return;
+        const workspace = workspaces.find(item => item.id === id);
+        workspaceEditingID = workspace ? id : '';
+        workspaceDraftProjects = new Set(workspace?.projects || []);
+        const modal = document.getElementById('workspace-modal');
+        document.getElementById('workspace-modal-title').textContent = workspace ? 'Manage workspace' : 'New workspace';
+        document.getElementById('workspace-name').value = workspace?.name || '';
+        const folder = document.getElementById('workspace-folder');
+        folder.value = workspace?.working_directory || settingsScanPaths[0] || '';
+        folder.readOnly = !!workspace;
+        document.getElementById('workspace-folder-browse').disabled = !!workspace;
+        document.getElementById('workspace-delete').style.display = workspace ? '' : 'none';
+        document.getElementById('workspace-save').textContent = workspace ? 'Save' : 'Create workspace';
+        document.getElementById('workspace-error').textContent = '';
+        document.getElementById('workspace-project-filter').value = '';
+        modal.style.display = 'flex';
+        renderWorkspaceProjectChoices();
+        document.getElementById(workspace ? 'workspace-project-filter' : 'workspace-name').focus();
+        // Scan paths are configuration, not necessarily opened in Settings yet.
+        if (!workspace && !folder.value) {
+            try {
+                const cfg = await fetchJSON('/api/config');
+                if (workspaceEditingID === '' && !folder.value) folder.value = cfg.scan_paths?.[0] || '';
+            } catch { /* Manual path entry remains available. */ }
+        }
+        // Worktrees are normally loaded when a project is expanded in the sidebar.
+        // Load them here too, with bounded concurrency, so the picker is complete.
+        const queue = [...projects];
+        await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
+            while (queue.length && workspaceEditingID !== null) {
+                const project = queue.shift();
+                await fetchWorktrees(project.name);
+            }
+        }));
+        if (workspaceEditingID !== null) renderWorkspaceProjectChoices();
+    }
+
+    function closeWorkspaceDialog() {
+        if (workspaceSaving) return;
+        workspaceEditingID = null;
+        document.getElementById('workspace-modal').style.display = 'none';
+        focusActiveTerminalSoon();
+    }
+
+    async function saveWorkspaceDialog(ev) {
+        ev.preventDefault();
+        if (workspaceSaving || workspaceEditingID === null) return;
+        const id = workspaceEditingID;
+        const name = document.getElementById('workspace-name').value.trim();
+        const tracked = [...workspaceDraftProjects];
+        const folder = document.getElementById('workspace-folder').value.trim();
+        if (!name || (!id && !folder)) {
+            document.getElementById('workspace-error').textContent = 'Enter a name and session folder.';
+            return;
+        }
+        workspaceSaving = true;
+        document.getElementById('workspace-save').disabled = true;
+        document.getElementById('workspace-delete').disabled = true;
+        try {
+            const saved = id ? await saveWorkspacePatch(id, { name, projects: tracked }) : await fetchJSON('/api/workspaces', {
+                method: 'POST',
+                timeoutMs: CONFIG_SAVE_TIMEOUT_MS,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, working_directory: folder, projects: tracked, active_project: tracked[0] || '' }),
+            });
+            storeWorkspace(saved);
+            workspaceSaving = false;
+            closeWorkspaceDialog();
+            renderWorkspaceList();
+            renderTabs();
+            if (!id) await switchProject('workspace:' + saved.id);
+            else if (activeTab === 'workspace:' + id) {
+                document.getElementById('status-project').textContent = saved.name;
+                refreshWorkspaceGitContext();
+            }
+            updateBadges();
+        } catch (err) {
+            document.getElementById('workspace-error').textContent = compactErrorMessage(err && err.message, 'Could not save workspace.');
+        } finally {
+            workspaceSaving = false;
+            document.getElementById('workspace-save').disabled = false;
+            document.getElementById('workspace-delete').disabled = false;
+        }
+    }
+
+    async function deleteWorkspaceFromDialog() {
+        if (!workspaceEditingID || workspaceSaving) return;
+        const id = workspaceEditingID;
+        const workspace = workspaces.find(item => item.id === id);
+        if (!workspace || !(await appConfirm('Delete workspace "' + workspace.name + '" and stop its session? Your repositories and files will be kept.'))) return;
+        workspaceSaving = true;
+        try {
+            await workspaceSaveQueue.catch(() => {});
+            await fetchJSON('/api/workspaces/' + encodeURIComponent(id), { method: 'DELETE', timeoutMs: CONFIG_SAVE_TIMEOUT_MS });
+            closeTab('workspace:' + id);
+            workspaces = workspaces.filter(item => item.id !== id);
+            workspaceSaving = false;
+            closeWorkspaceDialog();
+            renderWorkspaceList();
+            renderWorkspaceControls();
+            renderTabs();
+        } catch (err) {
+            document.getElementById('workspace-error').textContent = compactErrorMessage(err && err.message, 'Could not delete workspace.');
+        } finally {
+            workspaceSaving = false;
+        }
+    }
+
+    function initWorkspaces() {
+        document.getElementById('new-workspace-btn')?.addEventListener('click', () => openWorkspaceDialog());
+        document.getElementById('workspace-manage-btn')?.addEventListener('click', () => {
+            const workspace = workspaceForTab();
+            if (workspace) openWorkspaceDialog(workspace.id);
+        });
+        document.getElementById('workspace-project-select')?.addEventListener('change', ev => selectWorkspaceProject(ev.target.value));
+        document.getElementById('workspace-form')?.addEventListener('submit', saveWorkspaceDialog);
+        document.getElementById('workspace-cancel')?.addEventListener('click', closeWorkspaceDialog);
+        document.getElementById('workspace-backdrop')?.addEventListener('click', closeWorkspaceDialog);
+        document.getElementById('workspace-delete')?.addEventListener('click', deleteWorkspaceFromDialog);
+        document.getElementById('workspace-project-filter')?.addEventListener('input', renderWorkspaceProjectChoices);
+        document.getElementById('workspace-folder-browse')?.addEventListener('click', async () => {
+            const folder = document.getElementById('workspace-folder');
+            const path = await selectDirectory({ title: 'Select workspace session folder', defaultPath: folder.value });
+            if (path && workspaceEditingID === '') folder.value = path;
+        });
     }
 
     function showNoProjectGitState() {
@@ -2322,7 +2692,7 @@ function applyDatabaseState(data) {
         if (content) {
             content.dataset.project = '';
             content.dataset.loading = 'false';
-            content.innerHTML = '<div class="git-clean">No project selected</div>';
+            content.innerHTML = '<div class="git-clean">' + (workspaceForTab() ? 'Add projects to track their changes.' : 'No project selected') + '</div>';
         }
     }
 
@@ -2618,13 +2988,13 @@ function saveTabsNow(cliTransition = null) {
         saveTabs();
         const tabBar = document.getElementById('terminal-tabs');
         const names = getTabKeys();
-        const hideTabs = names.length <= 1;
+        const hideTabs = names.length <= 1 && !isWorkspaceTab(names[0]);
 
         // Build fingerprint to skip unnecessary DOM rebuilds
         const key = hideTabs ? '' : JSON.stringify(names.map(n => {
             const t = terminals[getFocusedPaneKey(n)] || terminals[n];
             const indicator = tabIndicatorState(t, n);
-            return [n, n === activeTab, indicator.dotState, indicator.label];
+            return [n, n === activeTab, indicator.dotState, indicator.label, workspaceForTab(n)?.name];
         }));
         if (key === lastTabsKey) {
             updateStatusContext();
@@ -2652,7 +3022,10 @@ function saveTabsNow(cliTransition = null) {
 
             const label = document.createElement('span');
             label.className = 'tab-label';
-            if (name.includes('@')) {
+            if (isWorkspaceTab(name)) {
+                label.textContent = workspaceForTab(name)?.name || 'Workspace';
+                tab.classList.add('workspace-tab');
+            } else if (name.includes('@')) {
                 const [proj, wt] = name.split('@', 2);
                 const shortProj = proj.includes('/') ? proj.split('/').pop() : proj;
                 const projLine = document.createElement('span');
@@ -2718,6 +3091,8 @@ function saveTabsNow(cliTransition = null) {
                 showNoProjectGitState();
             }
         }
+        renderWorkspaceControls();
+        renderWorkspaceList();
         renderTabs();
     }
 
@@ -3116,6 +3491,7 @@ function saveTabsNow(cliTransition = null) {
     function createTerminal(name, options = {}) {
         const sessionKey = name;
         const tabKey = options.tabKey || sessionKey;
+        if (isWorkspaceTab(tabKey) && (sessionKey !== tabKey || getPaneKeys(tabKey).length > 0)) return;
         const cli = resolveRuntimeCLI(options.cli);
         const container = document.getElementById('terminal-container');
         const { term, fitAddon, wrapper, closeBtn, providerWrap, providerSelect } = makeTerminalInstance(container, options.insertBeforeEl || null);
@@ -3234,6 +3610,7 @@ function saveTabsNow(cliTransition = null) {
     }
 
     async function restoreTabLayout(tabKey, layout) {
+        if (isWorkspaceTab(tabKey)) return; // A workspace always has exactly one pane.
         if (!layout || !Array.isArray(layout.panes) || layout.panes.length === 0) return;
         const savedPanes = layout.panes.filter(pane => pane && pane.session);
         if (savedPanes.length === 0) return;
@@ -3298,7 +3675,7 @@ function saveTabsNow(cliTransition = null) {
     }
 
     function openAgentPicker() {
-        if (!activeTab) return;
+        if (!activeTab || isWorkspaceTab(activeTab)) return;
         if (getPaneKeys(activeTab).length >= 2) return;
         const options = agentPickerOptions();
         if (options.length === 0) return;
@@ -3322,6 +3699,7 @@ function saveTabsNow(cliTransition = null) {
     async function confirmAgentPicker() {
         if (!agentPickerState) return;
         const { tabKey, selectedIndex } = agentPickerState;
+        if (isWorkspaceTab(tabKey)) return;
         const options = agentPickerOptions();
         const choice = options[selectedIndex];
         if (!choice) return;
@@ -4685,7 +5063,9 @@ function saveTabsNow(cliTransition = null) {
     }
 
     function sendDiffCommentToAI(projectName, prompt) {
-        const terminal = getTerminalEntry(projectName);
+        const tabKey = workspaceForTab(activeTab)?.projects?.includes(projectName) ? activeTab : projectName;
+        const terminal = getTerminalEntry(tabKey);
+        if (isWorkspaceTab(tabKey)) prompt = 'Project: ' + projectName + '\nPath: ' + (projectForKey(projectName)?.path || projectName) + '\n' + prompt;
         if (!terminal || !terminal.connection || terminal.connection.state !== 'open') {
             showToast('Comment not sent', 'The current AI terminal is not connected.', 'error', 3600);
             return false;
@@ -5099,7 +5479,7 @@ function saveTabsNow(cliTransition = null) {
         diffChangeIndex = -1;
         updateChangeCounter();
         const filename = diffEntryName(entry);
-        title.textContent = filename;
+        title.textContent = isWorkspaceTab(activeTab) ? commandProjectLabel(projectName) + ' / ' + filename : filename;
         body.innerHTML = '<div style="padding:12px 16px;color:var(--text-dim)">Loading...</div>';
         modal.style.display = 'flex';
         updateDiffFilePanelState();
@@ -8364,6 +8744,7 @@ function readSettingsDangerousPermissions() {
     function updateSidePanels() {
         const gitPanel = document.getElementById('git-panel');
         if (gitPanel) gitPanel.classList.toggle('database-mode', databaseActive);
+        renderWorkspaceControls();
         if (gitPanel) gitPanel.style.display = !databaseActive && (overviewActive || jobsActive) ? 'none' : '';
         reclampSidePanelWidths();
     }
@@ -13245,6 +13626,8 @@ function renderJobLogText(container) {
             { id: 'app.openDatabase', title: 'Open database workbench', subtitle: 'Read-only schemas, query console, and results' },
             { id: 'overview.refresh', title: 'Overview: Refresh', subtitle: 'Reload workspace health' },
             { id: 'overview.pullAll', title: 'Overview: Pull all', subtitle: 'Run git pull for every project' },
+            { id: 'workspace.create', title: 'Workspace: New', subtitle: 'One AI session with several tracked projects' },
+            { id: 'workspace.manage', title: 'Workspace: Manage tracked projects', subtitle: 'Add or remove projects from this workspace' },
             { id: 'app.rescanProjects', title: 'Projects: Rescan', subtitle: 'Find newly checked-out repositories' },
             { id: 'app.openSettings', title: 'Open settings', subtitle: 'Projects, capabilities, and preferences' },
             { id: 'app.openShortcuts', title: 'Open shortcuts', subtitle: 'Keyboard shortcut list' },
@@ -13309,6 +13692,7 @@ function renderJobLogText(container) {
             { id: 'app.openDatabase', title: 'Open database workbench', subtitle: 'Read-only schemas, query console, and results', run: () => toggleDatabase() },
             { id: 'overview.refresh', title: 'Overview: Refresh', subtitle: 'Reload workspace health', run: () => overviewActive ? loadOverview() : showOverview() },
             { id: 'overview.pullAll', title: 'Overview: Pull all', subtitle: 'Run git pull for every project', run: () => pullAllProjects() },
+            { id: 'workspace.create', title: 'Workspace: New', subtitle: 'One AI session with several tracked projects', run: () => openWorkspaceDialog() },
             { id: 'app.rescanProjects', title: 'Projects: Rescan', subtitle: 'Find newly checked-out repositories', run: () => rescanProjects() },
             { id: 'app.openSettings', title: 'Open settings', subtitle: 'Projects, capabilities, and preferences', run: () => openSettings() },
             { id: 'app.openShortcuts', title: 'Open shortcuts', subtitle: 'Keyboard shortcut list', run: () => openShortcutsModal() },
@@ -13318,14 +13702,18 @@ function renderJobLogText(container) {
             { id: 'app.toggleRightPanel', title: 'Toggle right panel', subtitle: 'Collapse or expand Git status', run: () => gitPanelCollapseBtn.click() },
             { id: 'app.previousTab', title: 'Go to previous tab', subtitle: 'Switch open terminal tab', run: () => switchAdjacentTab(-1) },
             { id: 'app.nextTab', title: 'Go to next tab', subtitle: 'Switch open terminal tab', run: () => switchAdjacentTab(1) },
-            { id: 'terminal.closePaneOrTab', title: 'Terminal: Close active pane/tab', subtitle: activeTab || 'Close the focused terminal pane or tab', run: () => closeActivePaneOrTab() },
+            { id: 'terminal.closePaneOrTab', title: 'Terminal: Close active pane/tab', subtitle: workspaceForTab()?.name || activeTab || 'Close the focused terminal pane or tab', run: () => closeActivePaneOrTab() },
         ];
         if (activeTab) {
-            actions.push({ id: 'terminal.restartSession', title: 'Restart session', subtitle: activeTab, run: () => restartProject(activeTab) });
+            actions.push({ id: 'terminal.restartSession', title: 'Restart session', subtitle: workspaceForTab()?.name || activeTab, run: () => restartProject(activeTab) });
             if (canResumeActiveSession()) {
-                actions.push({ id: 'terminal.restartAndResumeSession', title: 'Restart and resume session', subtitle: activeTab, run: () => restartAndResumeActiveSession() });
+                actions.push({ id: 'terminal.restartAndResumeSession', title: 'Restart and resume session', subtitle: workspaceForTab()?.name || activeTab, run: () => restartAndResumeActiveSession() });
             }
-            actions.push({ id: 'terminal.splitPane', title: 'Terminal: Split pane', subtitle: activeTab, run: () => openAgentPicker() });
+            if (isWorkspaceTab(activeTab)) {
+                actions.push({ id: 'workspace.manage', title: 'Workspace: Manage tracked projects', subtitle: workspaceForTab()?.name || '', run: () => openWorkspaceDialog(workspaceForTab()?.id) });
+            } else {
+                actions.push({ id: 'terminal.splitPane', title: 'Terminal: Split pane', subtitle: activeTab, run: () => openAgentPicker() });
+            }
         }
         if (activeProject) {
             const activeBaseProject = activeCommandProject();
@@ -13381,6 +13769,9 @@ function renderJobLogText(container) {
                 }
             });
         }
+        workspaces.forEach(workspace => {
+            actions.push({ id: 'workspace.open.' + workspace.id, title: 'Workspace: ' + workspace.name, subtitle: workspace.working_directory, run: () => switchProject('workspace:' + workspace.id) });
+        });
         sortedProjects().forEach(project => {
             const projectID = commandIDPart(project.name);
             actions.push({
@@ -13934,6 +14325,7 @@ function renderJobLogText(container) {
         'goto-project-overlay',
         'settings-modal',
         'command-palette-modal',
+        'workspace-modal',
         'database-password-modal',
         'text-prompt-modal',
         'job-schedule-modal',
@@ -13969,6 +14361,13 @@ function renderJobLogText(container) {
         if (handleKeymapCaptureKeydown(ev)) return;
 
         if (ev.key === 'Escape') {
+            if (isVisibleElement('workspace-modal') && !appDialog) {
+                ev.stopPropagation();
+                if (ev.isComposing || ev.keyCode === 229) return;
+                ev.preventDefault();
+                closeWorkspaceDialog();
+                return;
+            }
             if (consumeDatabaseAutocompleteEscape(ev)) return;
             if (activeDiffComment) {
                 ev.stopPropagation();

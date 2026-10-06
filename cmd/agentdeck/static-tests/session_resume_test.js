@@ -24,7 +24,7 @@ function harness(tabKey = 'org/project', sessionKey = 'split-pane') {
     const context = {
         activeTab: tabKey, activeProject: null, sessionRestartInFlight: false,
         terminals: { [sessionKey]: { cli: 'openai' }, other: otherPane },
-        customCLIIntegrations: [],
+        customCLIIntegrations: [], workspaces: [],
         Keymap,
         keymapState: Keymap.normalizeConfig({
             active_keymap_profile: 'custom',
@@ -34,6 +34,8 @@ function harness(tabKey = 'org/project', sessionKey = 'split-pane') {
         sortedProjects: () => [],
         decorateCommandActions: actions => actions,
         getFocusedPaneKey: () => sessionKey,
+        isWorkspaceTab: key => key?.startsWith('workspace:'),
+        workspaceForTab: () => null,
         normalizeCLI: cli => cli,
         resolveRuntimeCLI: cli => cli,
         fetch: async (url, options) => { requests.push({ url, options }); },
@@ -54,7 +56,7 @@ function harness(tabKey = 'org/project', sessionKey = 'split-pane') {
     return { context, requests, focused, errors, otherPane };
 }
 
-for (const tabKey of ['org/project', 'org/project@task']) {
+for (const tabKey of ['org/project', 'org/project@task', 'workspace:one']) {
     test(`bound restart and resume touches only the focused session in ${tabKey}`, async () => {
         const { context, requests, focused, otherPane } = harness(tabKey);
         assert.ok(context.keymapCommandCatalog().some(item => item.id === commandID));
@@ -62,7 +64,8 @@ for (const tabKey of ['org/project', 'org/project@task']) {
         assert.equal(action?.id, commandID);
         await action.run();
 
-        const base = '/api/projects/' + encodeURIComponent(tabKey);
+        const base = tabKey.startsWith('workspace:')
+            ? '/api/workspaces/one' : '/api/projects/' + encodeURIComponent(tabKey);
         assert.deepEqual(requests.map(item => item.url), [
             base + '/restart?session=split-pane', base + '/terminal/start',
         ]);

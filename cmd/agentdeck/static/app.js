@@ -8101,9 +8101,12 @@ function readSettingsDangerousPermissions() {
 	document.getElementById('settings-tags-add-btn').onclick = addProjectTags;
         const labelProjectInput = document.getElementById('settings-tags-project');
         labelProjectInput.addEventListener('focus', () => showProjectLabelSuggestions());
-        labelProjectInput.addEventListener('input', () => {
-            showProjectLabelSuggestions(!!labelProjectInput.value.trim());
-            prefillProjectLabels();
+        labelProjectInput.addEventListener('input', () => showProjectLabelSuggestions(!!labelProjectInput.value.trim()));
+        // Clicking the box around the chips focuses the field, like an input.
+        document.getElementById('settings-tags-projects').addEventListener('mousedown', ev => {
+            if (ev.target !== ev.currentTarget) return;
+            ev.preventDefault();
+            labelProjectInput.focus();
         });
         labelProjectInput.addEventListener('keydown', handleProjectLabelSuggestionKeydown);
         labelProjectInput.addEventListener('blur', hideProjectLabelSuggestions);
@@ -8179,12 +8182,14 @@ function readSettingsDangerousPermissions() {
         settingsScanPaths = Array.isArray(cfg.scan_paths) ? [...cfg.scan_paths] : [];
         settingsExtraProjects = cfg.extra_projects ? [...cfg.extra_projects] : [];
         settingsProjectTags = cfg.project_tags ? JSON.parse(JSON.stringify(cfg.project_tags)) : {};
+        labelDraftProjects = [];
         settingsDatabaseConnections = normalizeDatabaseConnections(databaseConnections);
         settingsDatabaseEditingID = '';
 	renderScanPaths();
 	renderExtraProjects();
 	renderSettingsCLIIntegrations();
 	renderProjectTags();
+        renderLabelProjectChips();
         renderSettingsDatabases();
         renderDatabaseDiscoveryProjectOptions();
         resetSettingsDatabaseForm();
@@ -8431,10 +8436,12 @@ function readSettingsDangerousPermissions() {
     // reuses the branch autocomplete's look and keys rather than a <datalist>,
     // whose popup the browser draws outside the theme.
     let projectLabelSuggest = null; // { items, highlightedIndex, dropdown }
+    let labelDraftProjects = [];    // projects picked as chips, in the order picked
 
     function projectLabelSuggestionItems(query) {
         const needle = query.trim().toLowerCase();
         return projects.map(project => project.name)
+            .filter(name => !labelDraftProjects.includes(name))
             .filter(name => !needle || name.toLowerCase().includes(needle))
             .sort((a, b) => a.localeCompare(b));
     }
@@ -8454,7 +8461,7 @@ function readSettingsDangerousPermissions() {
 
         const dropdown = document.createElement('div');
         dropdown.className = 'branch-autocomplete';
-        const rect = input.getBoundingClientRect();
+        const rect = (document.getElementById('settings-tags-projects') || input).getBoundingClientRect();
         dropdown.style.left = rect.left + 'px';
         dropdown.style.top = rect.bottom + 'px';
         dropdown.style.width = rect.width + 'px';
@@ -8496,11 +8503,42 @@ function readSettingsDangerousPermissions() {
         showProjectLabelSuggestions();
     }
 
+    // Picking a project turns it into a chip and keeps the list open, so several
+    // can be picked in a row.
     function applyProjectLabelSuggestion(name) {
-        document.getElementById('settings-tags-project').value = name;
-        hideProjectLabelSuggestions();
-        prefillProjectLabels();
-        document.getElementById('settings-tags-value').focus();
+        if (!labelDraftProjects.includes(name)) labelDraftProjects.push(name);
+        document.getElementById('settings-tags-project').value = '';
+        renderLabelProjectChips();
+        showProjectLabelSuggestions();
+    }
+
+    function removeLabelProject(name) {
+        labelDraftProjects = labelDraftProjects.filter(item => item !== name);
+        renderLabelProjectChips();
+        document.getElementById('settings-tags-project').focus();
+    }
+
+    function renderLabelProjectChips() {
+        const picker = document.getElementById('settings-tags-projects');
+        const input = document.getElementById('settings-tags-project');
+        if (!picker || !input) return;
+        picker.querySelectorAll('.label-project-chip').forEach(chip => chip.remove());
+        labelDraftProjects.forEach(name => {
+            const chip = document.createElement('span');
+            chip.className = 'keymap-shortcut-chip label-project-chip';
+            const label = document.createElement('span');
+            label.textContent = name;
+            chip.appendChild(label);
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.setAttribute('aria-label', 'Remove ' + name);
+            remove.title = 'Remove ' + name;
+            remove.innerHTML = iconHTML('x');
+            remove.onclick = () => removeLabelProject(name);
+            chip.appendChild(remove);
+            picker.insertBefore(chip, input);
+        });
+        input.placeholder = labelDraftProjects.length ? '' : 'project names';
     }
 
     function hideProjectLabelSuggestions() {
@@ -8509,15 +8547,26 @@ function readSettingsDangerousPermissions() {
     }
 
     function handleProjectLabelSuggestionKeydown(ev) {
+        const input = document.getElementById('settings-tags-project');
         if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
             ev.preventDefault();
             moveProjectLabelSuggestion(ev.key === 'ArrowDown' ? 1 : -1);
-        } else if (ev.key === 'Enter' && projectLabelSuggest) {
-            const name = projectLabelSuggest.items[projectLabelSuggest.highlightedIndex];
-            if (name) {
-                ev.preventDefault();
-                applyProjectLabelSuggestion(name);
+        } else if (ev.key === 'Enter') {
+            const highlighted = projectLabelSuggest?.items[projectLabelSuggest.highlightedIndex];
+            const typed = input.value.trim();
+            const exact = projects.find(project => project.name === typed)?.name;
+            ev.preventDefault();
+            if (highlighted || exact) {
+                applyProjectLabelSuggestion(highlighted || exact);
+            } else if (!typed && labelDraftProjects.length) {
+                hideProjectLabelSuggestions();
+                document.getElementById('settings-tags-value').focus();
             }
+        } else if (ev.key === 'Backspace' && !input.value && labelDraftProjects.length) {
+            ev.preventDefault();
+            labelDraftProjects = labelDraftProjects.slice(0, -1);
+            renderLabelProjectChips();
+            if (projectLabelSuggest) showProjectLabelSuggestions();
         } else if (ev.key === 'Escape' && projectLabelSuggest) {
             // Close the list, not the Settings window behind it.
             ev.preventDefault();
@@ -8528,24 +8577,28 @@ function readSettingsDangerousPermissions() {
         }
     }
 
-    // Picking a project that already has labels fills them in, because Add
-    // replaces a project's labels rather than adding to them.
-    function prefillProjectLabels() {
-        const labels = settingsProjectTags[document.getElementById('settings-tags-project').value.trim()];
-        const valueInput = document.getElementById('settings-tags-value');
-        if (Array.isArray(labels) && !valueInput.value.trim()) valueInput.value = labels.join(', ');
-    }
-
+    // Adds the labels to every picked project, plus a name still typed in the
+    // field. It adds rather than replaces, so labelling several projects at
+    // once never drops labels they already had.
     function addProjectTags() {
         const projInput = document.getElementById('settings-tags-project');
         const valueInput = document.getElementById('settings-tags-value');
-        const project = projInput.value.trim();
+        const typed = projInput.value.trim();
+        const targets = typed && !labelDraftProjects.includes(typed) ? [...labelDraftProjects, typed] : [...labelDraftProjects];
         const tags = valueInput.value.split(',').map(s => s.trim()).filter(Boolean);
-        if (!project || tags.length === 0) return;
-        settingsProjectTags[project] = tags;
+        if (targets.length === 0 || tags.length === 0) return;
+        targets.forEach(project => {
+            const current = Array.isArray(settingsProjectTags[project]) ? settingsProjectTags[project] : [];
+            settingsProjectTags[project] = [...new Set([...current, ...tags])];
+        });
+        labelDraftProjects = [];
         projInput.value = '';
         valueInput.value = '';
+        renderLabelProjectChips();
         renderProjectTags();
+        // Enter in the labels field fires no click or input event, which is
+        // what Settings autosave listens for.
+        noteSettingsChange();
     }
 
     function renderSettingsDatabases() {

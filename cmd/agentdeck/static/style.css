@@ -7164,6 +7164,40 @@ html[data-theme="light"] .editor-image-preview-stage {
     color: var(--accent);
 }
 
+/* Settings -> Project labels: picked projects as chips inside a box that
+   looks like the other Settings inputs, with the text field after them. */
+.label-project-picker {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: text;
+}
+
+.label-project-picker:focus-within {
+    border-color: var(--accent);
+}
+
+#settings-modal-body .label-project-picker input[type="text"],
+#settings-modal-body .label-project-picker input[type="text"]:focus {
+    flex: 1 1 80px;
+    min-width: 80px;
+    width: auto;
+    padding: 4px 8px;
+    background: transparent;
+    border: none;
+}
+
+.label-project-chip {
+    cursor: default;
+}
+
 /* Settings -> Project labels: name on the left, its current labels dimmed on
    the right, like the workspace picker's folders. */
 .project-label-suggestion {

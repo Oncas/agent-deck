@@ -266,3 +266,70 @@ func TestWorkspaceWebsocketReconnectAttachesToSameSession(t *testing.T) {
 		conn.CloseNow()
 	}
 }
+
+func TestWorkspaceDirectoryExpandsHomeAndExplainsErrors(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	project := filepath.Join(home, "projects")
+	if err := os.Mkdir(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(home, "notes.txt")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resolvedHome, _ := filepath.EvalSymlinks(home)
+	resolvedProject, _ := filepath.EvalSymlinks(project)
+
+	for input, want := range map[string]string{
+		"~": resolvedHome, "~/": resolvedHome, " ~/projects ": resolvedProject, project: resolvedProject,
+	} {
+		if got, err := workspaceDirectory(input); err != nil || got != want {
+			t.Errorf("workspaceDirectory(%q) = %q, %v; want %q", input, got, err, want)
+		}
+	}
+	for input, want := range map[string]string{
+		"projects":                 "session folder must be an absolute path or start with ~/",
+		"~someone/projects":        "session folder must be an absolute path or start with ~/",
+		"~/missing":                "session folder does not exist: " + filepath.Join(home, "missing"),
+		file:                       "session folder is not a folder: " + file,
+		filepath.Join(file, "sub"): "session folder does not exist: " + filepath.Join(file, "sub"),
+	} {
+		if _, err := workspaceDirectory(input); err == nil || err.Error() != want {
+			t.Errorf("workspaceDirectory(%q) error = %v; want %q", input, err, want)
+		}
+	}
+}
+
+func TestCreateWorkspaceStoresExpandedFolderAndRejectsMissingOne(t *testing.T) {
+	api, _ := workspaceTestAPI(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.Mkdir(filepath.Join(home, "work"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	create := func(folder string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		api.handleCreateWorkspace(rec, newJSONRequest(t, http.MethodPost, "/api/workspaces", map[string]any{
+			"name": "Home relative", "working_directory": folder, "projects": []string{"org/a"},
+		}))
+		return rec
+	}
+
+	rec := create("~/work")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create with ~/work = %d: %s", rec.Code, rec.Body.String())
+	}
+	var ws config.Workspace
+	if err := json.Unmarshal(rec.Body.Bytes(), &ws); err != nil {
+		t.Fatal(err)
+	}
+	if want, _ := filepath.EvalSymlinks(filepath.Join(home, "work")); ws.WorkingDirectory != want {
+		t.Fatalf("stored folder = %q, want %q", ws.WorkingDirectory, want)
+	}
+
+	rec = create("~/gone")
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "session folder does not exist: "+filepath.Join(home, "gone")) {
+		t.Fatalf("create with missing folder = %d: %s", rec.Code, rec.Body.String())
+	}
+}

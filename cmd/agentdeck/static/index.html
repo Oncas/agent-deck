@@ -70,6 +70,13 @@
                 <button id="database-btn" class="mode-btn" type="button" title="Database">Database</button>
             </div>
             <div id="project-sidebar-body">
+                <div id="workspace-section">
+                    <div class="workspace-section-header">
+                        <span>Workspaces</span>
+                        <button id="new-workspace-btn" type="button" title="New multi-project workspace">+ New</button>
+                    </div>
+                    <div id="workspace-list"></div>
+                </div>
                 <div id="sidebar-search">
                     <input type="text" id="search-input" placeholder="Filter projects..." autocomplete="off">
                 </div>
@@ -221,6 +228,13 @@
                 <div id="usage-body" class="usage-body"></div>
                 <span id="usage-refresh" class="usage-refresh" data-icon="rotate-cw" title="Refresh usage"></span>
             </div>
+            <div id="workspace-git-controls" style="display:none">
+                <label for="workspace-project-select">Tracked project</label>
+                <div class="workspace-switcher-row">
+                    <select id="workspace-project-select" aria-label="Tracked project"></select>
+                    <button id="workspace-manage-btn" type="button" title="Add or remove tracked projects">Manage</button>
+                </div>
+            </div>
             <div id="git-panel-header">
                 <span>Git Status</span>
                 <div id="git-actions">
@@ -235,6 +249,32 @@
                 <div class="git-clean">No project selected</div>
             </div>
         </div>
+    </div>
+
+    <div id="workspace-modal" style="display:none">
+        <div id="workspace-backdrop"></div>
+        <form id="workspace-form" role="dialog" aria-modal="true" aria-labelledby="workspace-modal-title">
+            <h2 id="workspace-modal-title">New workspace</h2>
+            <label class="workspace-field" for="workspace-name">Name
+                <input id="workspace-name" type="text" required autocomplete="off" placeholder="e.g. Checkout redesign">
+            </label>
+            <label class="workspace-field" for="workspace-folder">Session folder</label>
+            <div class="workspace-folder-row">
+                <input id="workspace-folder" type="text" required autocomplete="off" spellcheck="false" placeholder="/home/user/projects">
+                <button id="workspace-folder-browse" type="button">Browse</button>
+            </div>
+            <p class="workspace-note">One AI session starts in this folder. Choose a parent folder when working across repositories.</p>
+            <div class="workspace-section-header"><span>Track projects and worktrees</span><span id="workspace-selected-count"></span></div>
+            <input id="workspace-project-filter" type="search" autocomplete="off" placeholder="Filter projects and worktrees..." aria-label="Filter projects and worktrees">
+            <div id="workspace-project-choices"></div>
+            <p class="workspace-note">Tracking controls which Git changes appear here. Adding or removing projects keeps your session running.</p>
+            <div id="workspace-error" role="alert"></div>
+            <div class="workspace-dialog-actions">
+                <button id="workspace-delete" type="button" style="display:none">Delete workspace</button>
+                <button id="workspace-cancel" type="button">Cancel</button>
+                <button id="workspace-save" type="submit">Create workspace</button>
+            </div>
+        </form>
     </div>
 
     <div id="agent-picker-modal" style="display:none">

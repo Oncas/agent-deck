@@ -1,4 +1,5 @@
 @import url('/jobs.css');
+@import url('/workspaces.css');
 
 /* Vendored so terminals and Monaco get the intended face on machines where
    JetBrains Mono isn't installed system-wide (otherwise the stack silently

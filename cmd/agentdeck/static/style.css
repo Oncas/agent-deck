@@ -3059,6 +3059,30 @@ html[data-theme="light"] .diff-image-pane-body {
     color: var(--text);
 }
 
+/* Groups related rows on a long page. A line separates the groups, and the
+   rows inside a group go without one so the groups stand out. */
+.settings-section-title {
+    margin: 18px 0 0;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.settings-page-title + .settings-section-title {
+    margin-top: 14px;
+    padding-top: 0;
+    border-top: none;
+}
+
+.settings-page:has(.settings-section-title) .settings-row {
+    padding: 10px 0;
+    border-bottom: none;
+}
+
 /* One setting per row: name and description on the left, control on the right. */
 .settings-row {
     display: flex;

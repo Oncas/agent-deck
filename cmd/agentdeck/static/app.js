@@ -49,13 +49,21 @@
     let jobSchedulePreviewBlocksSave = false;
     let jobScheduleValidationMessage = '';
     let jobSaving = false;
-    let githubActivityPollTimer = null;
+    let activityPollTimer = null;
+    let activityPollKey = '';
     let usagePollTimer = null;
     let settingsCapabilities = null;
     let runtimeCapabilities = null;
     let providerSwitchInFlight = false;
     let dangerousPermissions = {};
-    let showGitHubActivity = false;
+    // The code host whose activity the right panel shows ('' for none). Each
+    // id matches its backend route, GET /api/<id>/activity/today.
+    const ACTIVITY_PROVIDERS = {
+        github: { name: 'GitHub', pullRequests: 'PR' },
+        gitlab: { name: 'GitLab', pullRequests: 'MR' },
+    };
+    let activityProvider = '';
+    let gitlabHost = '';
     // Each entry is one CLI whose usage the right panel can show: the usage box
     // gets a tab per enabled provider and Settings a set of rows per provider.
     // The id matches the backend's usageProvider name (GET /api/<id>/usage)
@@ -489,6 +497,7 @@ function resolveRuntimeCLI(cli) {
         const provider = AI_PROVIDER_BY_VALUE[key];
         if (provider) return provider.shortLabel;
         if (key === 'gh') return 'GitHub CLI';
+        if (key === 'glab') return 'GitLab CLI';
         if (key === 'docker') return 'Docker';
         return key;
     }
@@ -982,7 +991,8 @@ function applyConfigState(cfg) {
 	refreshAIProviders(cfg && cfg.cli_integrations);
 	currentCLI = normalizeCLI(cfg && cfg.cli);
 	dangerousPermissions = normalizeDangerousPermissions(cfg && cfg.dangerous_permissions);
-        showGitHubActivity = Boolean(cfg && cfg.show_github_activity);
+        activityProvider = normalizeActivityProvider(cfg && cfg.activity_provider);
+        gitlabHost = (cfg && cfg.gitlab_host) || '';
         applyUsageConfig(cfg);
         startupGitPullFFOnly = Boolean(cfg && cfg.startup_git_pull_ff_only);
         preventSleepWhileActive = !(cfg && cfg.disable_sleep_prevention);
@@ -991,7 +1001,7 @@ function applyConfigState(cfg) {
         keymapState = Keymap.normalizeConfig(cfg || {}, keymapOptions());
         updateShortcutLabels();
         renderTerminalProviderSwitcher();
-        syncGitHubActivityVisibility();
+        syncActivity();
         syncUsage();
         if (isCommandPaletteOpen()) renderCommandPalette();
         if (isShortcutsOpen()) renderShortcutsModalContent();
@@ -1373,7 +1383,7 @@ function applyDatabaseState(data) {
         initSearch();
         initNotificationHandlers();
         loadBuildInfo();
-        initGitHubActivity();
+        initActivity();
         initUsage();
         initDevReload();
 
@@ -8068,6 +8078,7 @@ function readSettingsDangerousPermissions() {
             item.onclick = () => showSettingsPage(item.dataset.settingsPage);
         });
         initSettingsUsageRows();
+        document.getElementById('settings-activity-provider')?.addEventListener('change', syncSettingsGitLabHostRow);
         // Clicks and changes run after the control's own handler has updated
         // the settings state; typing waits for a pause.
         ['settings-modal-content', 'settings-cli-integration-modal'].forEach(id => {
@@ -8174,7 +8185,9 @@ function readSettingsDangerousPermissions() {
         settingsCapabilities = capabilities;
         if (capabilities) runtimeCapabilities = capabilities;
         renderSettingsCLIOptions(cfg.cli || currentCLI);
-        document.getElementById('settings-github-activity').checked = showGitHubActivity;
+        document.getElementById('settings-activity-provider').value = activityProvider;
+        document.getElementById('settings-gitlab-host').value = gitlabHost;
+        syncSettingsGitLabHostRow();
         writeSettingsUsage();
         document.getElementById('settings-startup-git-pull-ff-only').checked = startupGitPullFFOnly;
         document.getElementById('settings-prevent-sleep').checked = preventSleepWhileActive;
@@ -8204,7 +8217,8 @@ function readSettingsDangerousPermissions() {
         const theme = document.getElementById('settings-theme-select')?.value || '';
         const terminalFont = normalizeTerminalFontSize(document.getElementById('settings-terminal-font-size')?.value);
         const cli = document.getElementById('settings-cli-select')?.value || '';
-        const githubActivity = Boolean(document.getElementById('settings-github-activity')?.checked);
+        const activity = document.getElementById('settings-activity-provider')?.value || '';
+        const gitlabHostSetting = document.getElementById('settings-gitlab-host')?.value.trim() || '';
         const startupPullFFOnly = Boolean(document.getElementById('settings-startup-git-pull-ff-only')?.checked);
         const preventSleep = Boolean(document.getElementById('settings-prevent-sleep')?.checked);
         return JSON.stringify({
@@ -8212,7 +8226,8 @@ function readSettingsDangerousPermissions() {
             theme,
             terminalFont,
             cli,
-            githubActivity,
+            activity,
+            gitlabHost: gitlabHostSetting,
             usage: readSettingsUsage(),
 		startupPullFFOnly,
 		preventSleep,
@@ -8897,7 +8912,8 @@ function readSettingsDangerousPermissions() {
         const theme = document.getElementById('settings-theme-select').value;
         const terminalFont = normalizeTerminalFontSize(document.getElementById('settings-terminal-font-size').value);
         const cli = document.getElementById('settings-cli-select').value;
-	const showGitHubActivitySetting = Boolean(document.getElementById('settings-github-activity')?.checked);
+	const activityProviderSetting = normalizeActivityProvider(document.getElementById('settings-activity-provider')?.value);
+	const gitlabHostSetting = document.getElementById('settings-gitlab-host')?.value.trim() || '';
 	const startupGitPullFFOnlySetting = Boolean(document.getElementById('settings-startup-git-pull-ff-only')?.checked);
 	const preventSleepSetting = Boolean(document.getElementById('settings-prevent-sleep')?.checked);
 	const nextCLIIntegrations = normalizeCLIIntegrations(settingsCLIIntegrations);
@@ -8918,7 +8934,8 @@ function readSettingsDangerousPermissions() {
 		theme: theme,
 		terminal_font_size: terminalFont,
 		cli: nextCLI,
-		show_github_activity: showGitHubActivitySetting,
+		activity_provider: activityProviderSetting,
+		gitlab_host: gitlabHostSetting,
             ...readSettingsUsage(),
             startup_git_pull_ff_only: startupGitPullFFOnlySetting,
             disable_sleep_prevention: !preventSleepSetting,
@@ -8976,8 +8993,12 @@ function readSettingsDangerousPermissions() {
     document.getElementById('agent-picker-backdrop').onclick = closeAgentPicker;
     document.getElementById('agent-picker-close').onclick = closeAgentPicker;
 
-    // ─── GitHub Today ───────────────────────────────────────────────
-    function githubActivityLevel(total) {
+    // --- Coding activity ---
+    function normalizeActivityProvider(value) {
+        return Object.hasOwn(ACTIVITY_PROVIDERS, value) ? value : '';
+    }
+
+    function activityLevel(total) {
         if (total >= 30) return 4;
         if (total >= 15) return 3;
         if (total >= 5) return 2;
@@ -8985,71 +9006,81 @@ function readSettingsDangerousPermissions() {
         return 0;
     }
 
-    function renderGitHubActivity(data, error) {
-        const body = document.getElementById('github-activity-body');
-        if (!body) return;
+    function renderActivity(provider, data, error) {
+        const body = document.getElementById('activity-body');
+        const meta = ACTIVITY_PROVIDERS[provider];
+        if (!body || !meta) return;
         if (error) {
-            body.innerHTML = `<div class="github-activity-error">${esc(compactErrorMessage(error, 'GitHub activity unavailable.'))}</div>`;
+            body.innerHTML = `<div class="activity-error">${esc(compactErrorMessage(error, `${meta.name} activity unavailable.`))}</div>`;
             return;
         }
 
         const total = Number(data && data.total) || 0;
-        const level = githubActivityLevel(total);
+        const level = activityLevel(total);
         const chips = [
             ['push', Number(data && data.pushes) || 0],
-            ['PR', Number(data && data.pull_requests) || 0],
+            [meta.pullRequests, Number(data && data.pull_requests) || 0],
             ['issue', Number(data && data.issues) || 0],
             ['comment', Number(data && data.comments) || 0],
             ['other', Number(data && data.other) || 0],
         ].filter(([, value], idx) => value > 0 || idx < 4);
-        const label = 'activity today';
+        const label = `${meta.name} today`;
         const user = data && data.username ? `@${data.username}` : 'current user';
 
         body.innerHTML =
-            `<div class="github-activity-main">` +
-            `<span class="github-activity-tile level-${level}"></span>` +
-            `<span class="github-activity-count">${total}</span>` +
-            `<span class="github-activity-label">${esc(label)} · ${esc(user)}</span>` +
+            `<div class="activity-main">` +
+            `<span class="activity-tile level-${level}"></span>` +
+            `<span class="activity-count">${total}</span>` +
+            `<span class="activity-label">${esc(label)} · ${esc(user)}</span>` +
             `</div>` +
-            `<div class="github-activity-chips">` +
-            chips.map(([name, value]) => `<span class="github-activity-chip">${esc(name)} ${value}</span>`).join('') +
+            `<div class="activity-chips">` +
+            chips.map(([name, value]) => `<span class="activity-chip">${esc(name)} ${value}</span>`).join('') +
             `</div>`;
     }
 
-    async function loadGitHubActivityToday() {
-        if (!showGitHubActivity) return;
-        const btn = document.getElementById('github-activity-refresh');
+    async function loadActivityToday() {
+        const provider = activityProvider;
+        if (!provider) return;
+        const btn = document.getElementById('activity-refresh');
         if (btn) btn.classList.add('loading');
         try {
-            const data = await fetchJSON('/api/github/activity/today');
-            renderGitHubActivity(data);
+            const data = await fetchJSON(`/api/${provider}/activity/today`);
+            if (provider === activityProvider) renderActivity(provider, data);
         } catch (err) {
-            renderGitHubActivity(null, err && err.message);
+            if (provider === activityProvider) renderActivity(provider, null, err && err.message);
         } finally {
             if (btn) btn.classList.remove('loading');
         }
     }
 
-    function syncGitHubActivityVisibility() {
-        const section = document.getElementById('github-activity-section');
+    // Switching code host, or GitLab instance, shows another account's counts,
+    // so the tile reloads at once instead of waiting for the next poll.
+    function syncActivity() {
+        const section = document.getElementById('activity-section');
         if (!section) return;
-        section.style.display = showGitHubActivity ? '' : 'none';
-        if (!showGitHubActivity) {
-            clearInterval(githubActivityPollTimer);
-            githubActivityPollTimer = null;
-            return;
-        }
-        if (!githubActivityPollTimer) {
-            loadGitHubActivityToday();
-            githubActivityPollTimer = setInterval(loadGitHubActivityToday, 60000);
-        }
+        section.style.display = activityProvider ? '' : 'none';
+        const key = activityProvider === 'gitlab' ? `gitlab|${gitlabHost}` : activityProvider;
+        if (key === activityPollKey) return;
+        activityPollKey = key;
+        clearInterval(activityPollTimer);
+        activityPollTimer = null;
+        if (!key) return;
+        const body = document.getElementById('activity-body');
+        if (body) body.innerHTML = '<div class="activity-loading">loading...</div>';
+        loadActivityToday();
+        activityPollTimer = setInterval(loadActivityToday, 60000);
     }
 
-    function initGitHubActivity() {
-        document.getElementById('github-activity-refresh')?.addEventListener('click', () => {
-            loadGitHubActivityToday();
+    function initActivity() {
+        document.getElementById('activity-refresh')?.addEventListener('click', () => {
+            loadActivityToday();
         });
-        syncGitHubActivityVisibility();
+        syncActivity();
+    }
+
+    function syncSettingsGitLabHostRow() {
+        const row = document.getElementById('settings-gitlab-host-row');
+        if (row) row.hidden = document.getElementById('settings-activity-provider')?.value !== 'gitlab';
     }
 
     // --- AI usage ---

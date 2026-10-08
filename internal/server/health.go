@@ -261,6 +261,7 @@ func (a *apiHandler) handleCapabilities(w http.ResponseWriter, r *http.Request) 
 		"opencode": ptyDependencies["opencode"],
 		"kimi":     ptyDependencies["kimi"],
 		"gh":       statusFromPath(a.githubRuntime().executablePath()),
+		"glab":     statusFromPath(a.gitlabRuntime().executablePath()),
 		"docker":   dockerDependency(),
 	}
 	for id, command := range customChecks {

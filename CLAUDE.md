@@ -86,7 +86,10 @@ electron/
 - `POST /api/projects/{name}/pull` — Git pull
 - `POST /api/projects/{name}/pin` — Toggle pin
 - `GET /api/projects/{name}/diff` — File diff
-- `GET /api/github/activity/today` — This user's GitHub contribution counts for today
+- `GET /api/github/activity/today`, `GET /api/gitlab/activity/today` - This
+  user's contribution counts for today on GitHub or GitLab (merge requests are
+  counted as `pull_requests`). The `activity_provider` setting picks which one
+  the right panel shows.
 - `GET /api/claude/usage` / `GET /api/codex/usage` — Estimated API cost, conversations
   and messages for today, this week and this month, from `~/.claude/projects`
   (or `$CLAUDE_CONFIG_DIR`) and `~/.codex/sessions`. Cached for 5 minutes;
@@ -135,7 +138,7 @@ packaged build and a dev build never share settings or scheduled jobs; see
   "extra_projects": ["/path/to/project"],
   "pinned_projects": ["project-name"],
   "cli": "claude",
-  "show_github_activity": true
+  "activity_provider": "github"
 }
 ```
 
@@ -164,15 +167,25 @@ packaged build and a dev build never share settings or scheduled jobs; see
   at each run. Custom integrations only define an interactive command, so a job
   fails with an error while one is selected.
 
-## GitHub integration
+## GitHub and GitLab activity
 
-The activity tile shells out to the `gh` CLI, so it uses whatever account
-`gh auth login` established — no token lives in this app's config.
-`GET /api/capabilities` reports `gh` under `dependencies`.
+The activity tile shells out to the `gh` or `glab` CLI (`forgeCLI` in
+`internal/server/forge.go`), so it uses whatever account `gh auth login` or
+`glab auth login` established - no token lives in this app's config. Each CLI
+gets only its own login, host and proxy variables from the environment.
+`GET /api/capabilities` reports `gh` and `glab` under `dependencies`.
 
-It reads `gh api /users/<login>/events --paginate` and counts the events that
-land on the local day. The events feed takes no date filter and holds at most
-300 events over 90 days, which is plenty for "today".
+`activity_provider` is `github`, `gitlab` or empty (off); a config that still
+has the old `show_github_activity: true` loads as `github`.
+
+GitHub: reads `gh api /users/<login>/events --paginate` and counts the events
+that land on the local day. The events feed takes no date filter and holds at
+most 300 events over 90 days, which is plenty for "today".
+
+GitLab: reads `glab api events --paginate`, the signed-in user's own events,
+asking the server for a few days around today and keeping the local day.
+`gitlab_host` selects a self-managed instance and is passed as `--hostname`;
+empty leaves glab to its own default (`GITLAB_HOST`, else gitlab.com).
 
 ## Usage tracking
 

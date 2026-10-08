@@ -52,14 +52,21 @@ func (a *apiHandler) githubTodayActivity(ctx context.Context, now time.Time) (fo
 	}
 
 	today := now.Format("2006-01-02")
-	query := url.Values{}
-	// The GitHub events feed takes no date filter — it returns the most recent
-	// events (up to 300, 90 days) newest first, so page through it and keep the
-	// exact local day below.
-	query.Set("per_page", "100")
-
-	endpoint := fmt.Sprintf("/users/%s/events?%s", url.PathEscape(user.Login), query.Encode())
-	events, err := runPaginatedGhAPI[githubUserEvent](ctx, a.githubRuntime(), endpoint)
+	events, err := a.githubUserEvents(ctx, user.Login)
+	if err != nil && isForgeNotFoundError(err) {
+		// A renamed account stops resolving under its old login, and the login
+		// above may have been cached before the rename. Look it up again and
+		// retry once if it changed.
+		a.clearCachedGitHubUser()
+		fresh, userErr := a.githubCurrentUser(ctx)
+		if userErr != nil {
+			return forgeActivityResponse{}, userErr
+		}
+		if fresh.Login != user.Login {
+			user = fresh
+			events, err = a.githubUserEvents(ctx, user.Login)
+		}
+	}
 	if err != nil {
 		if isForgeAuthError(err) {
 			a.clearCachedGitHubUser()
@@ -80,6 +87,17 @@ func (a *apiHandler) githubTodayActivity(ctx context.Context, now time.Time) (fo
 		resp.count(githubEventContributionBucket(event))
 	}
 	return resp, nil
+}
+
+func (a *apiHandler) githubUserEvents(ctx context.Context, login string) ([]githubUserEvent, error) {
+	query := url.Values{}
+	// The GitHub events feed takes no date filter — it returns the most recent
+	// events (up to 300, 90 days) newest first, so page through it and keep the
+	// exact local day in the caller.
+	query.Set("per_page", "100")
+
+	endpoint := fmt.Sprintf("/users/%s/events?%s", url.PathEscape(login), query.Encode())
+	return runPaginatedGhAPI[githubUserEvent](ctx, a.githubRuntime(), endpoint)
 }
 
 func githubEventFallsOnDate(event githubUserEvent, now time.Time) bool {

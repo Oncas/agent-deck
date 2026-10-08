@@ -267,6 +267,12 @@ func createdOnLocalDay(createdAt string, now time.Time) bool {
 	return created.Year() == now.Year() && created.YearDay() == now.YearDay()
 }
 
+// isForgeNotFoundError matches the "gh: Not Found (HTTP 404)" a CLI prints when
+// the API has no such resource.
+func isForgeNotFoundError(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "http 404")
+}
+
 func isForgeAuthError(err error) bool {
 	if err == nil {
 		return false

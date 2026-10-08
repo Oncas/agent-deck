@@ -426,6 +426,75 @@ func TestGitHubTodayActivityClearsCachedUserAfterAuthFailure(t *testing.T) {
 	}
 }
 
+func TestGitHubTodayActivityFollowsRenamedLogin(t *testing.T) {
+	login := "old-login"
+	var userCalls int
+
+	a := &apiHandler{
+		githubCLI: fakeGithubCLI(func(args []string) ([]byte, error) {
+			if len(args) < 2 || args[0] != "api" {
+				return nil, errors.New("unexpected gh command")
+			}
+			switch endpoint := args[1]; {
+			case endpoint == "/user":
+				userCalls++
+				return mustJSON(t, githubCurrentUser{ID: 1, Login: login}), nil
+			case strings.HasPrefix(endpoint, "/users/"+login+"/events?"):
+				return mustJSON(t, []githubUserEvent{}), nil
+			case strings.HasPrefix(endpoint, "/users/"):
+				return []byte("gh: Not Found (HTTP 404)"), errors.New("exit 1")
+			default:
+				return nil, errors.New("unexpected endpoint: " + endpoint)
+			}
+		}),
+	}
+
+	now := time.Now()
+	if _, err := a.githubTodayActivity(context.Background(), now); err != nil {
+		t.Fatalf("first activity call failed: %v", err)
+	}
+
+	login = "new-login"
+	resp, err := a.githubTodayActivity(context.Background(), now)
+	if err != nil {
+		t.Fatalf("activity call after rename failed: %v", err)
+	}
+	if resp.Username != "new-login" {
+		t.Fatalf("username = %q, want new-login", resp.Username)
+	}
+	if userCalls != 2 {
+		t.Fatalf("/user calls = %d, want 2 after the cached login stopped resolving", userCalls)
+	}
+}
+
+func TestGitHubTodayActivityReturnsNotFoundWhenLoginIsUnchanged(t *testing.T) {
+	var eventCalls int
+
+	a := &apiHandler{
+		githubCLI: fakeGithubCLI(func(args []string) ([]byte, error) {
+			if len(args) < 2 || args[0] != "api" {
+				return nil, errors.New("unexpected gh command")
+			}
+			switch endpoint := args[1]; {
+			case endpoint == "/user":
+				return mustJSON(t, githubCurrentUser{ID: 1, Login: "reviewer"}), nil
+			case strings.HasPrefix(endpoint, "/users/reviewer/events?"):
+				eventCalls++
+				return []byte("gh: Not Found (HTTP 404)"), errors.New("exit 1")
+			default:
+				return nil, errors.New("unexpected endpoint: " + endpoint)
+			}
+		}),
+	}
+
+	if _, err := a.githubTodayActivity(context.Background(), time.Now()); err == nil {
+		t.Fatal("activity call should fail when the events feed is missing")
+	}
+	if eventCalls != 1 {
+		t.Fatalf("event calls = %d, want 1 when the login did not change", eventCalls)
+	}
+}
+
 func fakeGithubCLI(run func(args []string) ([]byte, error)) *forgeCLI {
 	return &forgeCLI{forge: githubForge,
 		environ:     func() []string { return []string{"HOME=/tmp/home", "PATH=/usr/bin"} },

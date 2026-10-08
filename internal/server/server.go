@@ -21,6 +21,7 @@ type Server struct {
 
 func New(configPath string, cfg *config.Config, projects []scanner.Project, staticFS fs.FS, monacoFS fs.FS, sqlFormatterFS fs.FS, manager *ptyPkg.Manager, listenHost string, devMode bool) *Server {
 	api := newAPIHandler(configPath, cfg, projects, manager)
+	keepLimitsIn(configPath)
 	ws := newWSHandler(manager, api)
 
 	mux := http.NewServeMux()

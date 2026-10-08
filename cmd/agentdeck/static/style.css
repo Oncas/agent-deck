@@ -181,7 +181,7 @@ body.electron-custom-chrome #app {
 /* Larger icons for prominent buttons and modal closes */
 #overview-refresh-btn .icon,
 #jobs-refresh-btn .icon,
-#github-activity-refresh .icon,
+#activity-refresh .icon,
 #agent-picker-close .icon, #job-log-close .icon,
 #commit-modal-close .icon, #settings-modal-close .icon,
 #editor-modal-close .icon, #find-modal-close .icon,
@@ -1253,14 +1253,14 @@ html[data-theme="light"] .dirty-badge {
 }
 
 /* GitHub activity */
-#github-activity-section {
+#activity-section {
     border-bottom: 1px solid var(--border);
     background: var(--bg-sidebar);
     position: relative;
     padding: 10px 42px 10px 16px;
 }
 
-#github-activity-refresh {
+#activity-refresh {
     position: absolute;
     top: 11px;
     right: 16px;
@@ -1269,26 +1269,26 @@ html[data-theme="light"] .dirty-badge {
     opacity: 0.7;
 }
 
-#github-activity-refresh:hover {
+#activity-refresh:hover {
     color: var(--accent);
     opacity: 1;
 }
 
-#github-activity-refresh.loading {
+#activity-refresh.loading {
     opacity: 0.45;
 }
 
-#github-activity-body {
+#activity-body {
     min-width: 0;
 }
 
-.github-activity-main {
+.activity-main {
     display: flex;
     align-items: center;
     gap: 10px;
 }
 
-.github-activity-tile {
+.activity-tile {
     width: 18px;
     height: 18px;
     border-radius: 4px;
@@ -1297,38 +1297,38 @@ html[data-theme="light"] .dirty-badge {
     flex-shrink: 0;
 }
 
-.github-activity-tile.level-1 { background: #a9b8ff; }
-.github-activity-tile.level-2 { background: #6f86f7; }
-.github-activity-tile.level-3 { background: #4f67db; }
-.github-activity-tile.level-4 { background: #3648a8; }
+.activity-tile.level-1 { background: #a9b8ff; }
+.activity-tile.level-2 { background: #6f86f7; }
+.activity-tile.level-3 { background: #4f67db; }
+.activity-tile.level-4 { background: #3648a8; }
 
-.github-activity-count {
+.activity-count {
     color: var(--text);
     font-size: 16px;
     font-weight: 700;
     line-height: 1;
 }
 
-.github-activity-label,
-.github-activity-loading,
-.github-activity-error {
+.activity-label,
+.activity-loading,
+.activity-error {
     color: var(--text-dim);
     font-size: 11px;
 }
 
-.github-activity-error {
+.activity-error {
     color: var(--red);
     line-height: 1.4;
 }
 
-.github-activity-chips {
+.activity-chips {
     margin-top: 8px;
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
 }
 
-.github-activity-chip {
+.activity-chip {
     border: 1px solid var(--border);
     border-radius: 999px;
     color: var(--text-dim);
@@ -3092,7 +3092,8 @@ html[data-theme="light"] .diff-image-pane-body {
 }
 
 .settings-row-control select,
-.settings-row-control input[type="number"] {
+.settings-row-control input[type="number"],
+.settings-row-control input[type="text"] {
     width: 220px;
 }
 

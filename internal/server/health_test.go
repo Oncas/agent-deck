@@ -88,7 +88,7 @@ func TestHandleCapabilitiesUsesGithubDirectResolver(t *testing.T) {
 
 	api := &apiHandler{
 		cfg: &config.Config{},
-		githubCLI: &githubCLI{
+		githubCLI: &forgeCLI{forge: githubForge,
 			lookPath: func(name string) (string, error) {
 				if name == ghPath {
 					return ghPath, nil
@@ -140,7 +140,7 @@ func TestHandleCapabilitiesIncludesCustomCLIIntegrations(t *testing.T) {
 				},
 			},
 		},
-		githubCLI: &githubCLI{
+		githubCLI: &forgeCLI{forge: githubForge,
 			lookPath:    func(string) (string, error) { return "", exec.ErrNotFound },
 			userHomeDir: func() (string, error) { return t.TempDir(), nil },
 		},
@@ -173,7 +173,7 @@ func TestHandleCapabilitiesReportsEveryScanPath(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing")
 	api := &apiHandler{
 		cfg: &config.Config{ScanPaths: []string{existing, missing}},
-		githubCLI: &githubCLI{
+		githubCLI: &forgeCLI{forge: githubForge,
 			lookPath:    func(string) (string, error) { return "", exec.ErrNotFound },
 			userHomeDir: func() (string, error) { return t.TempDir(), nil },
 		},

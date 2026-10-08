@@ -7,23 +7,26 @@ import (
 )
 
 type Config struct {
-	ScanPaths          []string             `json:"scan_paths,omitempty"`
-	ExtraProjects      []string             `json:"extra_projects,omitempty"`
-	PinnedProjects     []string             `json:"pinned_projects,omitempty"`
-	ProjectTags        map[string][]string  `json:"project_tags,omitempty"` // project name → tags
-	KeymapProfiles     []KeymapProfile      `json:"keymap_profiles,omitempty"`
-	ActiveKeymap       string               `json:"active_keymap_profile,omitempty"`
-	OpenTabs           []string             `json:"open_tabs,omitempty"`
-	ActiveTab          string               `json:"active_tab,omitempty"`
-	TabLayouts         map[string]TabLayout `json:"tab_layouts,omitempty"`
-	Workspaces         []Workspace          `json:"workspaces,omitempty"`
-	Theme              string               `json:"theme,omitempty"`
-	TerminalFontSize   int                  `json:"terminal_font_size,omitempty"` // 0 = use frontend default
-	CLI                string               `json:"cli,omitempty"`                // "claude" (default), "cursor", "openai", "gemini", "opencode", "kimi", or custom integration id
-	CLIIntegrations    []CLIIntegration     `json:"cli_integrations,omitempty"`
-	ShowGitHubActivity bool                 `json:"show_github_activity,omitempty"`
-	ShowClaudeUsage    bool                 `json:"show_claude_usage,omitempty"`
-	ShowCodexUsage     bool                 `json:"show_codex_usage,omitempty"`
+	ScanPaths        []string             `json:"scan_paths,omitempty"`
+	ExtraProjects    []string             `json:"extra_projects,omitempty"`
+	PinnedProjects   []string             `json:"pinned_projects,omitempty"`
+	ProjectTags      map[string][]string  `json:"project_tags,omitempty"` // project name → tags
+	KeymapProfiles   []KeymapProfile      `json:"keymap_profiles,omitempty"`
+	ActiveKeymap     string               `json:"active_keymap_profile,omitempty"`
+	OpenTabs         []string             `json:"open_tabs,omitempty"`
+	ActiveTab        string               `json:"active_tab,omitempty"`
+	TabLayouts       map[string]TabLayout `json:"tab_layouts,omitempty"`
+	Workspaces       []Workspace          `json:"workspaces,omitempty"`
+	Theme            string               `json:"theme,omitempty"`
+	TerminalFontSize int                  `json:"terminal_font_size,omitempty"` // 0 = use frontend default
+	CLI              string               `json:"cli,omitempty"`                // "claude" (default), "cursor", "openai", "gemini", "opencode", "kimi", or custom integration id
+	CLIIntegrations  []CLIIntegration     `json:"cli_integrations,omitempty"`
+	// ActivityProvider picks the code host whose activity the right panel
+	// shows: ActivityGitHub, ActivityGitLab, or empty for none.
+	ActivityProvider string `json:"activity_provider,omitempty"`
+	GitLabHost       string `json:"gitlab_host,omitempty"` // empty = glab's default
+	ShowClaudeUsage  bool   `json:"show_claude_usage,omitempty"`
+	ShowCodexUsage   bool   `json:"show_codex_usage,omitempty"`
 	// "api" when a CLI is billed per token; empty means a subscription plan.
 	ClaudeBilling           string               `json:"claude_billing,omitempty"`
 	CodexBilling            string               `json:"codex_billing,omitempty"`
@@ -37,8 +40,14 @@ type Config struct {
 	DatabaseOrphanedQueries []DatabaseSavedQuery `json:"database_orphaned_queries,omitempty"`
 }
 
-// UnmarshalJSON accepts the legacy main_directory field while keeping all newly
-// written configuration on the scan_paths array.
+const (
+	ActivityGitHub = "github"
+	ActivityGitLab = "gitlab"
+)
+
+// UnmarshalJSON accepts the legacy main_directory and show_github_activity
+// fields while keeping all newly written configuration on scan_paths and
+// activity_provider.
 func (c *Config) UnmarshalJSON(data []byte) error {
 	type configAlias Config
 	var fields map[string]json.RawMessage
@@ -47,7 +56,8 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	}
 	value := struct {
 		*configAlias
-		MainDirectory string `json:"main_directory"`
+		MainDirectory      string `json:"main_directory"`
+		ShowGitHubActivity bool   `json:"show_github_activity"`
 	}{
 		configAlias: (*configAlias)(c),
 	}
@@ -56,6 +66,9 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	}
 	if _, hasScanPaths := fields["scan_paths"]; !hasScanPaths && value.MainDirectory != "" {
 		c.ScanPaths = []string{value.MainDirectory}
+	}
+	if _, hasProvider := fields["activity_provider"]; !hasProvider && value.ShowGitHubActivity {
+		c.ActivityProvider = ActivityGitHub
 	}
 	return nil
 }

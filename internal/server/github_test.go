@@ -12,7 +12,7 @@ import (
 )
 
 func TestGithubCLICommandEnv(t *testing.T) {
-	cli := &githubCLI{
+	cli := &forgeCLI{forge: githubForge,
 		environ: func() []string {
 			return []string{
 				"HOME=/home/tester",
@@ -79,7 +79,7 @@ func TestGithubCLICommandEnv(t *testing.T) {
 func TestGithubCLIExecutablePath(t *testing.T) {
 	t.Run("prefers PATH lookup first", func(t *testing.T) {
 		var lookedUp []string
-		cli := &githubCLI{
+		cli := &forgeCLI{forge: githubForge,
 			lookPath: func(path string) (string, error) {
 				lookedUp = append(lookedUp, path)
 				if path == "gh" {
@@ -104,7 +104,7 @@ func TestGithubCLIExecutablePath(t *testing.T) {
 
 	t.Run("falls back through common paths and expands tilde", func(t *testing.T) {
 		var lookedUp []string
-		cli := &githubCLI{
+		cli := &forgeCLI{forge: githubForge,
 			lookPath: func(path string) (string, error) {
 				lookedUp = append(lookedUp, path)
 				if path == "/home/tester/.local/bin/gh" {
@@ -137,7 +137,7 @@ func TestGithubCLIExecutablePath(t *testing.T) {
 
 	t.Run("retries lookup after initial failure", func(t *testing.T) {
 		attempts := 0
-		cli := &githubCLI{
+		cli := &forgeCLI{forge: githubForge,
 			lookPath: func(path string) (string, error) {
 				if path != "gh" {
 					return "", exec.ErrNotFound
@@ -171,7 +171,7 @@ func TestGithubCLIExecutablePath(t *testing.T) {
 
 func TestGithubCLIRun(t *testing.T) {
 	t.Run("returns stdout without stderr warnings on success", func(t *testing.T) {
-		cli := &githubCLI{
+		cli := &forgeCLI{forge: githubForge,
 			lookPath:    func(path string) (string, error) { return "/usr/bin/gh", nil },
 			userHomeDir: func() (string, error) { return "/tmp/home", nil },
 			runCommand: func(_ context.Context, _ string, _ []string, args ...string) ([]byte, []byte, error) {
@@ -192,7 +192,7 @@ func TestGithubCLIRun(t *testing.T) {
 	})
 
 	t.Run("prefers stderr in failure message", func(t *testing.T) {
-		cli := &githubCLI{
+		cli := &forgeCLI{forge: githubForge,
 			lookPath:    func(path string) (string, error) { return "/usr/bin/gh", nil },
 			userHomeDir: func() (string, error) { return "/tmp/home", nil },
 			runCommand: func(_ context.Context, _ string, _ []string, _ ...string) ([]byte, []byte, error) {
@@ -212,7 +212,7 @@ func TestGithubCLIRun(t *testing.T) {
 
 func TestRunGhAPIIgnoresStderrWarningsOnSuccess(t *testing.T) {
 	a := &apiHandler{
-		githubCLI: &githubCLI{
+		githubCLI: &forgeCLI{forge: githubForge,
 			lookPath:    func(path string) (string, error) { return "/usr/bin/gh", nil },
 			userHomeDir: func() (string, error) { return "/tmp/home", nil },
 			runCommand: func(_ context.Context, _ string, _ []string, args ...string) ([]byte, []byte, error) {
@@ -234,7 +234,7 @@ func TestRunGhAPIIgnoresStderrWarningsOnSuccess(t *testing.T) {
 }
 
 func TestRunPaginatedGhAPIIgnoresStderrWarningsOnSuccess(t *testing.T) {
-	cli := &githubCLI{
+	cli := &forgeCLI{forge: githubForge,
 		lookPath:    func(path string) (string, error) { return "/usr/bin/gh", nil },
 		userHomeDir: func() (string, error) { return "/tmp/home", nil },
 		runCommand: func(_ context.Context, _ string, _ []string, args ...string) ([]byte, []byte, error) {
@@ -426,8 +426,8 @@ func TestGitHubTodayActivityClearsCachedUserAfterAuthFailure(t *testing.T) {
 	}
 }
 
-func fakeGithubCLI(run func(args []string) ([]byte, error)) *githubCLI {
-	return &githubCLI{
+func fakeGithubCLI(run func(args []string) ([]byte, error)) *forgeCLI {
+	return &forgeCLI{forge: githubForge,
 		environ:     func() []string { return []string{"HOME=/tmp/home", "PATH=/usr/bin"} },
 		lookPath:    func(path string) (string, error) { return "/usr/bin/gh", nil },
 		userHomeDir: func() (string, error) { return "/tmp/home", nil },

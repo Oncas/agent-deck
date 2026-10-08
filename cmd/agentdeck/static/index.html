@@ -217,11 +217,11 @@
                 </div>
                 <pre id="docker-output"></pre>
             </div>
-            <div id="github-activity-section" style="display:none">
-                <div id="github-activity-body">
-                    <div class="github-activity-loading">loading...</div>
+            <div id="activity-section" style="display:none">
+                <div id="activity-body">
+                    <div class="activity-loading">loading...</div>
                 </div>
-                <span id="github-activity-refresh" data-icon="rotate-cw" title="Refresh GitHub activity"></span>
+                <span id="activity-refresh" data-icon="rotate-cw" title="Refresh activity"></span>
             </div>
             <div id="usage-section" class="usage-section" style="display:none">
                 <div id="usage-tabs" class="usage-header" role="tablist" aria-label="AI usage"></div>
@@ -546,11 +546,24 @@
                         </div>
                         <div class="settings-row">
                             <div class="settings-row-text">
-                                <div class="settings-row-label" id="settings-github-activity-label">Show GitHub activity</div>
-                                <div class="settings-row-desc">Today's contributions in the right panel. Needs the gh CLI.</div>
+                                <div class="settings-row-label" id="settings-activity-provider-label">Coding activity</div>
+                                <div class="settings-row-desc">Today's contributions in the right panel, read with the account you logged in to gh or glab with.</div>
                             </div>
                             <div class="settings-row-control">
-                                <label class="settings-switch"><input type="checkbox" id="settings-github-activity" aria-labelledby="settings-github-activity-label"><span class="settings-switch-track"></span></label>
+                                <select id="settings-activity-provider" aria-labelledby="settings-activity-provider-label">
+                                    <option value="">Off</option>
+                                    <option value="github">GitHub (gh)</option>
+                                    <option value="gitlab">GitLab (glab)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="settings-row" id="settings-gitlab-host-row" hidden>
+                            <div class="settings-row-text">
+                                <div class="settings-row-label" id="settings-gitlab-host-label">GitLab host</div>
+                                <div class="settings-row-desc">For a self-managed instance. Empty uses gitlab.com, or GITLAB_HOST when set.</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <input type="text" id="settings-gitlab-host" aria-labelledby="settings-gitlab-host-label" placeholder="gitlab.com" spellcheck="false" autocomplete="off">
                             </div>
                         </div>
                         <div id="settings-usage-rows"></div>

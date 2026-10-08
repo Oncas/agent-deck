@@ -117,3 +117,41 @@ func TestLoadDropsDisabledLegacyCustomDangerousCommand(t *testing.T) {
 		t.Fatalf("migrated command = %q, want custom-cli", got)
 	}
 }
+
+func TestLoadMigratesLegacyShowGitHubActivity(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		want string
+	}{
+		{"enabled", `{"show_github_activity": true}`, ActivityGitHub},
+		{"disabled", `{"show_github_activity": false}`, ""},
+		{"provider wins", `{"show_github_activity": true, "activity_provider": "gitlab"}`, ActivityGitLab},
+		{"explicitly off", `{"show_github_activity": true, "activity_provider": ""}`, ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(test.data), 0600); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.ActivityProvider != test.want {
+				t.Fatalf("activity_provider = %q, want %q", cfg.ActivityProvider, test.want)
+			}
+			if err := Save(path, cfg); err != nil {
+				t.Fatalf("Save: %v", err)
+			}
+			saved, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read saved config: %v", err)
+			}
+			if strings.Contains(string(saved), "show_github_activity") {
+				t.Fatalf("saved config still contains legacy show_github_activity: %s", saved)
+			}
+		})
+	}
+}

@@ -35,7 +35,7 @@ func TestHandlePatchConfigPreservesExistingFields(t *testing.T) {
 		ActiveKeymap:         "custom",
 		Theme:                "dark",
 		CLI:                  "claude",
-		ShowGitHubActivity:   true,
+		ActivityProvider:     config.ActivityGitHub,
 		ShowCodexUsage:       true,
 		StartupGitPullFFOnly: true,
 		CLIIntegrations: []config.CLIIntegration{
@@ -86,8 +86,8 @@ func TestHandlePatchConfigPreservesExistingFields(t *testing.T) {
 	if !got.DangerousPermissions["claude"] || !got.DangerousPermissions["cursor"] {
 		t.Fatalf("dangerous_permissions = %#v, want preserved", got.DangerousPermissions)
 	}
-	if !got.ShowGitHubActivity {
-		t.Fatal("show_github_activity = false, want preserved true")
+	if got.ActivityProvider != config.ActivityGitHub {
+		t.Fatalf("activity_provider = %q, want preserved github", got.ActivityProvider)
 	}
 	if !got.ShowCodexUsage {
 		t.Fatal("show_codex_usage = false, want preserved true")
@@ -112,8 +112,8 @@ func TestHandlePatchConfigPreservesExistingFields(t *testing.T) {
 	if !saved.DangerousPermissions["claude"] || !saved.DangerousPermissions["cursor"] {
 		t.Fatalf("saved dangerous_permissions = %#v, want preserved", saved.DangerousPermissions)
 	}
-	if !saved.ShowGitHubActivity {
-		t.Fatal("saved show_github_activity = false, want preserved true")
+	if saved.ActivityProvider != config.ActivityGitHub {
+		t.Fatalf("saved activity_provider = %q, want preserved github", saved.ActivityProvider)
 	}
 	if !saved.ShowCodexUsage {
 		t.Fatal("saved show_codex_usage = false, want preserved true")
@@ -152,34 +152,43 @@ func TestHandlePatchConfigSavesScanPaths(t *testing.T) {
 	}
 }
 
-func TestHandlePatchConfigSavesShowGitHubActivity(t *testing.T) {
-	initial := &config.Config{
-		ScanPaths:          []string{"/workspace/main"},
-		ShowGitHubActivity: true,
+func TestHandlePatchConfigSavesActivityProvider(t *testing.T) {
+	tests := []struct {
+		name         string
+		provider     string
+		host         string
+		wantProvider string
+		wantHost     string
+	}{
+		{"gitlab with pasted URL", "gitlab", "https://GitLab.example.com/", config.ActivityGitLab, "gitlab.example.com"},
+		{"off", "", "", "", ""},
+		{"unknown provider", "bitbucket", "", "", ""},
 	}
-	api, configPath := newConfigTestHandler(t, initial)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			initial := &config.Config{
+				ScanPaths:        []string{"/workspace/main"},
+				ActivityProvider: config.ActivityGitHub,
+			}
+			api, configPath := newConfigTestHandler(t, initial)
 
-	rec := httptest.NewRecorder()
-	req := newJSONRequest(t, http.MethodPatch, "/api/config", map[string]any{
-		"show_github_activity": false,
-	})
+			rec := httptest.NewRecorder()
+			req := newJSONRequest(t, http.MethodPatch, "/api/config", map[string]any{
+				"activity_provider": test.provider,
+				"gitlab_host":       test.host,
+			})
 
-	api.handlePatchConfig(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("PATCH /api/config status = %d, body = %s", rec.Code, rec.Body.String())
-	}
+			api.handlePatchConfig(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("PATCH /api/config status = %d, body = %s", rec.Code, rec.Body.String())
+			}
 
-	var got config.Config
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if got.ShowGitHubActivity {
-		t.Fatal("show_github_activity = true, want false")
-	}
-
-	saved := loadConfigFile(t, configPath)
-	if saved.ShowGitHubActivity {
-		t.Fatal("saved show_github_activity = true, want false")
+			saved := loadConfigFile(t, configPath)
+			if saved.ActivityProvider != test.wantProvider || saved.GitLabHost != test.wantHost {
+				t.Fatalf("saved activity_provider = %q, gitlab_host = %q, want %q, %q",
+					saved.ActivityProvider, saved.GitLabHost, test.wantProvider, test.wantHost)
+			}
+		})
 	}
 }
 

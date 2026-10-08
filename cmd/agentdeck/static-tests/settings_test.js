@@ -167,7 +167,7 @@ test('setting names are plain text, so only the control itself toggles', () => {
     const start = indexHtml.indexOf('<div id="settings-modal"');
     const settingsHtml = indexHtml.slice(start, indexHtml.indexOf('<div id="settings-database-modal"', start));
     assert.doesNotMatch(settingsHtml, /<label class="settings-row-label"/);
-    for (const id of ['settings-github-activity', 'settings-prevent-sleep', 'settings-startup-git-pull-ff-only']) {
+    for (const id of ['settings-prevent-sleep', 'settings-startup-git-pull-ff-only']) {
         assert.match(settingsHtml, new RegExp(`<label class="settings-switch"><input type="checkbox" id="${id}" aria-labelledby="${id}-label">`));
     }
 });

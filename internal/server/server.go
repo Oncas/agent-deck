@@ -56,6 +56,7 @@ func New(configPath string, cfg *config.Config, projects []scanner.Project, stat
 		mux.HandleFunc("GET /api/"+provider.name+"/usage", handleUsage(provider.home, api.usage[provider.name]))
 	}
 	mux.HandleFunc("GET /api/github/activity/today", api.handleGitHubTodayActivity)
+	mux.HandleFunc("GET /api/gitlab/activity/today", api.handleGitLabTodayActivity)
 	mux.HandleFunc("GET /api/jobs", api.handleListJobs)
 	mux.HandleFunc("POST /api/jobs", api.handleCreateJob)
 	mux.HandleFunc("POST /api/jobs/schedule/preview", api.handlePreviewJobSchedule)

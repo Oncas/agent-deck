@@ -1212,41 +1212,57 @@ test('the shell command runner and saved commands are gone', () => {
     assert.doesNotMatch(configGo, /FavoriteCommand/);
 });
 
-test('github today activity is compact and refreshes periodically', () => {
+test('coding activity is compact and refreshes periodically', () => {
     const dockerIndex = indexHtml.indexOf('id="docker-section"');
-    const activityIndex = indexHtml.indexOf('id="github-activity-section"');
+    const activityIndex = indexHtml.indexOf('id="activity-section"');
     const gitHeaderIndex = indexHtml.indexOf('id="git-panel-header"');
     const activitySection = indexHtml.slice(activityIndex, gitHeaderIndex);
 
     assert.ok(dockerIndex !== -1 && activityIndex !== -1 && gitHeaderIndex !== -1);
     assert.ok(dockerIndex < activityIndex);
     assert.ok(activityIndex < gitHeaderIndex);
-    assert.doesNotMatch(activitySection, /GitHub Today|github-activity-header/);
-    assert.match(activitySection, /id="github-activity-refresh"/);
-    assert.match(styleCss, /#github-activity-section/);
-    assert.match(styleCss, /#github-activity-refresh/);
-    assert.match(appJs, /async function loadGitHubActivityToday/);
-    assert.match(appJs, /fetchJSON\('\/api\/github\/activity\/today'\)/);
-    assert.match(appJs, /function syncGitHubActivityVisibility/);
-    assert.match(appJs, /showGitHubActivity = Boolean\(cfg && cfg\.show_github_activity\)/);
-    assert.match(appJs, /show_github_activity: showGitHubActivitySetting/);
-    assert.match(appJs, /setInterval\(loadGitHubActivityToday, 60000\)/);
-    assert.match(indexHtml, /id="settings-github-activity"/);
-    assert.match(configGo, /ShowGitHubActivity\s+bool\s+`json:"show_github_activity,omitempty"`/);
-    assert.match(apiGo, /ShowGitHubActivity\s+\*bool\s+`json:"show_github_activity"`/);
+    assert.doesNotMatch(activitySection, /GitHub Today|activity-header/);
+    assert.match(activitySection, /id="activity-refresh"/);
+    assert.match(styleCss, /#activity-section/);
+    assert.match(styleCss, /#activity-refresh/);
+    assert.match(appJs, /async function loadActivityToday/);
+    assert.match(appJs, /fetchJSON\(`\/api\/\$\{provider\}\/activity\/today`\)/);
+    assert.match(appJs, /function syncActivity\(/);
+    assert.match(appJs, /activityProvider = normalizeActivityProvider\(cfg && cfg\.activity_provider\)/);
+    assert.match(appJs, /activity_provider: activityProviderSetting/);
+    assert.match(appJs, /gitlab_host: gitlabHostSetting/);
+    assert.match(appJs, /setInterval\(loadActivityToday, 60000\)/);
+    assert.match(indexHtml, /id="settings-activity-provider"/);
+    assert.match(indexHtml, /id="settings-gitlab-host"/);
+    assert.match(configGo, /ActivityProvider\s+string\s+`json:"activity_provider,omitempty"`/);
+    assert.match(configGo, /GitLabHost\s+string\s+`json:"gitlab_host,omitempty"`/);
+    assert.match(apiGo, /ActivityProvider\s+\*string\s+`json:"activity_provider"`/);
+    assert.match(apiGo, /GitLabHost\s+\*string\s+`json:"gitlab_host"`/);
     assert.match(serverGo, /GET \/api\/github\/activity\/today/);
+    assert.match(serverGo, /GET \/api\/gitlab\/activity\/today/);
 });
 
-test('the AI usage box sits between GitHub activity and git status', () => {
+test('every activity provider has a backend route and a settings option', () => {
+    const start = appJs.indexOf('const ACTIVITY_PROVIDERS = {');
+    const block = appJs.slice(start, appJs.indexOf('};', start));
+    const ids = [...block.matchAll(/^\s+(\w+): \{/gm)].map(match => match[1]);
+    assert.deepEqual(ids, ['github', 'gitlab']);
+    for (const id of ids) {
+        assert.match(serverGo, new RegExp(`GET /api/${id}/activity/today`));
+        assert.match(indexHtml, new RegExp(`<option value="${id}">`));
+    }
+});
+
+test('the AI usage box sits between coding activity and git status', () => {
     const gitPanelStart = indexHtml.indexOf('<div id="git-panel">');
     const gitPanelEnd = indexHtml.indexOf('<div id="agent-picker-modal"', gitPanelStart);
     const gitPanelSection = indexHtml.slice(gitPanelStart, gitPanelEnd);
-    const githubIndex = gitPanelSection.indexOf('id="github-activity-section"');
+    const activityIndex = gitPanelSection.indexOf('id="activity-section"');
     const usageIndex = gitPanelSection.indexOf('id="usage-section"');
     const gitHeaderIndex = gitPanelSection.indexOf('id="git-panel-header"');
 
-    assert.ok(githubIndex !== -1 && usageIndex !== -1 && gitHeaderIndex !== -1);
-    assert.ok(githubIndex < usageIndex);
+    assert.ok(activityIndex !== -1 && usageIndex !== -1 && gitHeaderIndex !== -1);
+    assert.ok(activityIndex < usageIndex);
     assert.ok(usageIndex < gitHeaderIndex);
     for (const id of ['usage-tabs', 'usage-body', 'usage-refresh']) {
         assert.match(gitPanelSection, new RegExp(`id="${id}"`));

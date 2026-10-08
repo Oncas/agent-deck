@@ -32,8 +32,10 @@ type apiHandler struct {
 	manager                     *ptyPkg.Manager
 	docker                      *dockerManager
 	dockerComposeFiles          map[string]string // project name → repository-owned Compose file
-	githubCLI                   *githubCLI
+	githubCLI                   *forgeCLI
+	gitlabCLI                   *forgeCLI
 	githubUser                  githubUserCacheState
+	gitlabUser                  gitlabUserCacheState
 	usage                       map[string]*usageCoordinator // by usageProvider name
 	fetcher                     *fetcher
 	battery                     *batteryProbe
@@ -53,6 +55,7 @@ func newAPIHandler(configPath string, cfg *config.Config, projects []scanner.Pro
 		databasePools:            make(map[string]*databasePool),
 		docker:                   newDockerManager(),
 		githubCLI:                newGithubCLI(),
+		gitlabCLI:                newGitlabCLI(),
 		fetcher:                  newFetcher(1 * time.Minute),
 		battery:                  newBatteryProbe(),
 		startingJobs:             make(map[string]struct{}),
@@ -126,7 +129,8 @@ type configPatch struct {
 	TerminalFontSize     *int                         `json:"terminal_font_size"`
 	CLI                  *string                      `json:"cli"`
 	CLIIntegrations      *[]config.CLIIntegration     `json:"cli_integrations"`
-	ShowGitHubActivity   *bool                        `json:"show_github_activity"`
+	ActivityProvider     *string                      `json:"activity_provider"`
+	GitLabHost           *string                      `json:"gitlab_host"`
 	ShowClaudeUsage      *bool                        `json:"show_claude_usage"`
 	ShowCodexUsage       *bool                        `json:"show_codex_usage"`
 	ClaudeBilling        *string                      `json:"claude_billing"`
@@ -428,8 +432,11 @@ func (p configPatch) apply(cfg *config.Config) {
 	if p.CLIIntegrations != nil {
 		cfg.CLIIntegrations = cloneCLIIntegrations(*p.CLIIntegrations)
 	}
-	if p.ShowGitHubActivity != nil {
-		cfg.ShowGitHubActivity = *p.ShowGitHubActivity
+	if p.ActivityProvider != nil {
+		cfg.ActivityProvider = normalizeActivityProvider(*p.ActivityProvider)
+	}
+	if p.GitLabHost != nil {
+		cfg.GitLabHost = normalizeGitLabHost(*p.GitLabHost)
 	}
 	if p.ShowClaudeUsage != nil {
 		cfg.ShowClaudeUsage = *p.ShowClaudeUsage

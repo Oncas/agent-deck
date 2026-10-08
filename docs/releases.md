@@ -25,10 +25,9 @@
    Check the version, existing settings, an AI terminal, Git status/diffs,
    the editor and anything changed in this release. Close and reopen the app.
    AppImages share `~/.config/agentdeck/`; back it up before testing config changes.
-6. Edit the draft notes: summarize changes, fill in the distro/desktop/session
-   actually tested, and mention any upgrade steps or known issues. Then click
-   **Publish release**. Testing on my own machine is enough; other setups are
-   unverified unless someone tests them.
+6. Edit the draft notes: summarize changes and mention any upgrade steps or
+   known issues. Then click **Publish release**. Testing on my own machine is
+   enough; other setups are unverified unless someone tests them.
 
 For daily use, put the downloaded AppImage in `~/Applications/` and run
 `sh install-launcher.sh "$HOME/Applications/AgentDeck-1.0.1.AppImage"`.

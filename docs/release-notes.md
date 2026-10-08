@@ -2,8 +2,6 @@
 
 [Briefly describe the fixes or features in this release.]
 
-Tested on: [distro/version, desktop, X11 or Wayland].
-
 Upgrade notes: [state whether existing settings are preserved and describe any required steps or known issues].
 
 Download the **Linux x86-64 AppImage** below. The optional `install-launcher.sh`

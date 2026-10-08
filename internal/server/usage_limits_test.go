@@ -242,6 +242,50 @@ func TestLiveLimitsSourceKeepsTheLastReadingWhenAFetchFails(t *testing.T) {
 	}
 }
 
+// The token Claude Code saved expires while it isn't running, so after a
+// restart the last reading on disk is all there is to show.
+func TestLiveLimitsSourceRestoresTheLastReadingAfterARestart(t *testing.T) {
+	now := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{
+			"five_hour": {"utilization": 40.0, "resets_at": "2026-10-07T13:00:00+00:00"},
+			"seven_day": {"utilization": 20.0, "resets_at": "2026-10-09T00:00:00+00:00"}
+		}`))
+	}))
+	defer srv.Close()
+	home := t.TempDir()
+	writeClaudeCredentials(t, home, "tok", now.Add(time.Hour))
+	path := filepath.Join(t.TempDir(), ".agentdeck", "claude-plan-limits.json")
+
+	source := &liveLimitsSource{client: srv.Client(), apiBase: srv.URL, fetch: fetchClaudeLimits, path: path}
+	if got := source.load(context.Background(), home, now); got == nil {
+		t.Fatal("first load = nil")
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("saved reading = %v, %v", info, err)
+	}
+
+	later := now.Add(3 * time.Hour)
+	restarted := &liveLimitsSource{client: srv.Client(), apiBase: srv.URL, fetch: fetchClaudeLimits, path: path}
+	got := restarted.load(context.Background(), home, later)
+	if got == nil || got.ObservedAt != now.Format(time.RFC3339) {
+		t.Fatalf("after restart = %#v, want the saved reading", got)
+	}
+	assertLimitWindows(t, got.Windows, []usageLimitWindow{
+		{Key: "five_hour", Label: "5h", UsedPercent: 0},
+		{Key: "weekly", Label: "Week", UsedPercent: 20, ResetsAt: "2026-10-09T00:00:00Z"},
+	})
+
+	// A missing or unreadable file only means there is nothing to fall back to.
+	if err := os.WriteFile(path, []byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	broken := &liveLimitsSource{client: srv.Client(), apiBase: srv.URL, fetch: fetchClaudeLimits, path: path}
+	if got := broken.load(context.Background(), home, later); got != nil {
+		t.Fatalf("with a broken file = %#v", got)
+	}
+}
+
 func fakeJWT(expiresAt time.Time) string {
 	payload, _ := json.Marshal(map[string]any{"exp": expiresAt.Unix()})
 	return "eyJhbGciOiJub25lIn0." + base64.RawURLEncoding.EncodeToString(payload) + ".sig"

@@ -102,7 +102,8 @@ electron/
   while it talks to OpenAI directly (through a custom model provider they are
   empty), so those logs are just the fallback. Tokens are never refreshed here;
   when a fetch fails, the last reading is returned with its original
-  `observed_at`.
+  `observed_at`. That reading is kept in `.agentdeck/<id>-plan-limits.json`
+  next to the config, so it survives a restart while the token is expired.
 - `GET /api/sessions/status` — Agent state per session (`busy|waiting|shell|idle|unknown`)
 - `GET /api/power` — Whether the machine should be kept awake, and why
 - `GET|POST /api/config` — Configuration

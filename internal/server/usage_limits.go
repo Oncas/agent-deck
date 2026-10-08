@@ -212,24 +212,44 @@ type limitsFetcher func(ctx context.Context, client *http.Client, apiBase, home 
 // liveLimitsSource keeps the last reading per CLI data dir. Tokens expire
 // while the CLI isn't running and the endpoints rate-limit, so a failed fetch
 // falls back to that reading; its observed_at lets the panel mark it as old.
+// With a path, the readings are also kept on disk, so a restart while the
+// token is expired still has one.
 type liveLimitsSource struct {
 	client  *http.Client
 	apiBase string
 	fetch   limitsFetcher
+	path    string
 
-	mu   sync.Mutex
-	last map[string]*usageLimits
+	mu       sync.Mutex
+	last     map[string]*usageLimits
+	restored bool
+}
+
+// keepLimitsIn stores each source's readings in the .agentdeck directory
+// next to the config, like the job logs.
+func keepLimitsIn(configPath string) {
+	dir := filepath.Join(filepath.Dir(configPath), ".agentdeck")
+	claudeLimits.setPath(filepath.Join(dir, "claude-plan-limits.json"))
+	codexLimits.setPath(filepath.Join(dir, "codex-plan-limits.json"))
+}
+
+func (s *liveLimitsSource) setPath(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.path, s.restored = path, false
 }
 
 func (s *liveLimitsSource) load(ctx context.Context, home string, now time.Time) *usageLimits {
 	fresh := s.fetch(ctx, s.client, s.apiBase, home, now)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.restore()
 	if fresh != nil {
 		if s.last == nil {
 			s.last = map[string]*usageLimits{}
 		}
 		s.last[home] = fresh
+		s.save()
 		return cloneUsageLimits(fresh)
 	}
 	last := cloneUsageLimits(s.last[home])
@@ -243,6 +263,57 @@ func (s *liveLimitsSource) load(ctx context.Context, home string, now time.Time)
 		}
 	}
 	return last
+}
+
+// restore reads the saved readings once, keeping any taken since. A missing
+// or unreadable file leaves nothing to fall back to.
+func (s *liveLimitsSource) restore() {
+	if s.restored || s.path == "" {
+		return
+	}
+	s.restored = true
+	data, err := os.ReadFile(s.path)
+	if err != nil {
+		return
+	}
+	var saved map[string]*usageLimits
+	if json.Unmarshal(data, &saved) != nil {
+		return
+	}
+	for home, limits := range saved {
+		if limits == nil {
+			continue
+		}
+		if s.last == nil {
+			s.last = map[string]*usageLimits{}
+		}
+		if _, ok := s.last[home]; !ok {
+			s.last[home] = limits
+		}
+	}
+}
+
+// save writes the readings through a temporary file, so a crash mid-write
+// keeps the previous ones. Failing to save only costs the fallback.
+func (s *liveLimitsSource) save() {
+	if s.path == "" {
+		return
+	}
+	data, err := json.Marshal(s.last)
+	if err != nil || os.MkdirAll(filepath.Dir(s.path), 0o700) != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(s.path), filepath.Base(s.path)+".*")
+	if err != nil {
+		return
+	}
+	_, err = tmp.Write(data)
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil || os.Rename(tmp.Name(), s.path) != nil {
+		os.Remove(tmp.Name())
+	}
 }
 
 // newerUsageLimits returns whichever reading was observed later.

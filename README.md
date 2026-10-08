@@ -18,7 +18,7 @@ Contributors build in Docker, so they don't need a local Go toolchain.
 
 ### Linux download (x86-64)
 
-Open [Releases](https://github.com/Once4thewin/agent-deck/releases) and download
+Open [Releases](https://github.com/Oncas/agent-deck/releases) and download
 the latest published AppImage, `SHA256SUMS` and `install-launcher.sh`. If no
 release has been published yet, use the [source-build instructions](#development).
 The examples below use `1.0.1`; substitute the version you downloaded.
@@ -76,7 +76,7 @@ release. Back up settings before a release that changes stored config.
 
 If launch fails, run the AppImage from a terminal and include the output, app
 version, distro/version, desktop and X11/Wayland session in a
-[bug report](https://github.com/Once4thewin/agent-deck/issues).
+[bug report](https://github.com/Oncas/agent-deck/issues).
 
 ## What it does
 
@@ -192,7 +192,7 @@ Install [Docker](https://docs.docker.com/get-docker/) with Compose v2
 Then clone the repository:
 
 ```bash
-git clone https://github.com/Once4thewin/agent-deck.git
+git clone https://github.com/Oncas/agent-deck.git
 cd agent-deck
 make electron-dev
 ```
@@ -262,7 +262,7 @@ Apple Silicon only. This path is unverified by the maintainer and does not
 produce public release downloads. You also need Docker, Git, Node.js and npm.
 
 ```bash
-git clone https://github.com/Once4thewin/agent-deck.git
+git clone https://github.com/Oncas/agent-deck.git
 cd agent-deck
 make electron-package-mac   # writes a .dmg to ./dist/
 ```

@@ -6,4 +6,4 @@ Upgrade notes: [state whether existing settings are preserved and describe any r
 
 Download the **Linux x86-64 AppImage** below. The optional `install-launcher.sh`
 adds it to your app menu; `SHA256SUMS` verifies both downloads.
-See the [installation instructions](https://github.com/Once4thewin/agent-deck#installation).
+See the [installation instructions](https://github.com/Oncas/agent-deck#installation).

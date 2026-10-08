@@ -510,6 +510,7 @@
                 <div id="settings-modal-body">
                     <section class="settings-page" data-settings-page="general" role="tabpanel">
                         <h2 class="settings-page-title">General</h2>
+                        <h3 class="settings-section-title">Appearance</h3>
                         <div class="settings-row">
                             <div class="settings-row-text">
                                 <div class="settings-row-label" id="settings-theme-select-label">Theme</div>
@@ -530,6 +531,7 @@
                                 <input type="number" id="settings-terminal-font-size" aria-labelledby="settings-terminal-font-size-label" min="8" max="32" step="1" value="13">
                             </div>
                         </div>
+                        <h3 class="settings-section-title">Agents</h3>
                         <div class="settings-row">
                             <div class="settings-row-text">
                                 <div class="settings-row-label" id="settings-cli-select-label">Default AI CLI</div>
@@ -546,7 +548,17 @@
                         </div>
                         <div class="settings-row">
                             <div class="settings-row-text">
-                                <div class="settings-row-label" id="settings-activity-provider-label">Coding activity</div>
+                                <div class="settings-row-label" id="settings-prevent-sleep-label">Keep the system awake while agents work</div>
+                                <div class="settings-row-desc">Display sleep and locking stay unaffected. Sleep is allowed again below 20% on battery. Claude Code separately prevents idle sleep while it works.</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="settings-switch"><input type="checkbox" id="settings-prevent-sleep" aria-labelledby="settings-prevent-sleep-label"><span class="settings-switch-track"></span></label>
+                            </div>
+                        </div>
+                        <h3 class="settings-section-title">Activity</h3>
+                        <div class="settings-row">
+                            <div class="settings-row-text">
+                                <div class="settings-row-label" id="settings-activity-provider-label">Code host</div>
                                 <div class="settings-row-desc">Today's contributions in the right panel, read with the account you logged in to gh or glab with.</div>
                             </div>
                             <div class="settings-row-control">
@@ -567,15 +579,6 @@
                             </div>
                         </div>
                         <div id="settings-usage-rows"></div>
-                        <div class="settings-row">
-                            <div class="settings-row-text">
-                                <div class="settings-row-label" id="settings-prevent-sleep-label">Keep the system awake while agents work</div>
-                                <div class="settings-row-desc">Display sleep and locking stay unaffected. Sleep is allowed again below 20% on battery. Claude Code separately prevents idle sleep while it works.</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <label class="settings-switch"><input type="checkbox" id="settings-prevent-sleep" aria-labelledby="settings-prevent-sleep-label"><span class="settings-switch-track"></span></label>
-                            </div>
-                        </div>
                     </section>
 
                     <section class="settings-page" data-settings-page="projects" role="tabpanel" hidden>

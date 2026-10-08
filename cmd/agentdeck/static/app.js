@@ -9357,6 +9357,7 @@ function readSettingsDangerousPermissions() {
         const id = esc(provider.id);
         const label = esc(provider.label);
         return `
+            <h3 class="settings-section-title">${label} usage</h3>
             <div class="settings-row">
                 <div class="settings-row-text">
                     <div class="settings-row-label" id="settings-${id}-usage-label">Show ${label} usage</div>

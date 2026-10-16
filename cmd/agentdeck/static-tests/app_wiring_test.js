@@ -1251,6 +1251,107 @@ test('every activity provider has a backend route and a settings option', () => 
         assert.match(serverGo, new RegExp(`GET /api/${id}/activity/today`));
         assert.match(indexHtml, new RegExp(`<option value="${id}">`));
     }
+    assert.match(indexHtml, /<option value="both">/);
+});
+
+function activityProvidersSource() {
+    const start = appJs.indexOf('const ACTIVITY_PROVIDERS = {');
+    return appJs.slice(start, appJs.indexOf('};', start) + 2) + '\n';
+}
+
+test('the both activity setting covers GitHub then GitLab', () => {
+    const context = {};
+    vm.runInNewContext(activityProvidersSource() + ['normalizeActivityProvider', 'activityProviderIds'].map(functionSource).join('\n'), context);
+
+    assert.equal(context.normalizeActivityProvider('both'), 'both');
+    assert.equal(context.normalizeActivityProvider('bitbucket'), '');
+    assert.deepEqual([...context.activityProviderIds('both')], ['github', 'gitlab']);
+    assert.deepEqual([...context.activityProviderIds('gitlab')], ['gitlab']);
+    assert.deepEqual([...context.activityProviderIds('')], []);
+});
+
+test('the both activity setting gives each code host its own row', () => {
+    const elements = {
+        'activity-section': { style: {} },
+        'activity-body': { innerHTML: '' },
+    };
+    let loads = 0;
+    const context = {
+        activityProvider: 'both',
+        gitlabHost: '',
+        activityPollKey: '',
+        activityPollTimer: null,
+        document: { getElementById: id => elements[id] || null },
+        loadActivityToday: () => { loads++; },
+        setInterval: () => 1,
+        clearInterval: () => {},
+    };
+    vm.runInNewContext(activityProvidersSource() + ['activityProviderIds', 'syncActivity'].map(functionSource).join('\n'), context);
+
+    context.syncActivity();
+    const rows = [...elements['activity-body'].innerHTML.matchAll(/id="activity-(\w+)"/g)].map(match => match[1]);
+    assert.deepEqual(rows, ['github', 'gitlab']);
+    assert.equal(elements['activity-section'].style.display, '');
+    assert.equal(loads, 1);
+
+    context.syncActivity();
+    assert.equal(loads, 1);
+    context.gitlabHost = 'gitlab.example.com';
+    context.syncActivity();
+    assert.equal(loads, 2);
+});
+
+function activityLoadContext(rows, fetchJSON, provider) {
+    const refresh = { classList: { add() {}, remove() {} } };
+    const context = {
+        Promise,
+        activityProvider: provider,
+        activityPollKey: provider,
+        esc: value => String(value),
+        document: { getElementById: id => (id === 'activity-refresh' ? refresh : rows[id] || null) },
+        fetchJSON,
+    };
+    const names = ['activityProviderIds', 'activityLevel', 'compactErrorMessage', 'renderActivity', 'loadActivityToday'];
+    vm.runInNewContext(activityProvidersSource() + names.map(functionSource).join('\n'), context);
+    return context;
+}
+
+test('a failing code host only marks its own activity row', async () => {
+    const rows = { 'activity-github': { innerHTML: '' }, 'activity-gitlab': { innerHTML: '' } };
+    const context = activityLoadContext(rows, url => (url === '/api/github/activity/today'
+        ? Promise.resolve({ username: 'octocat', total: 3, pushes: 3 })
+        : Promise.reject(new Error('glab is not logged in'))), 'both');
+
+    await context.loadActivityToday();
+    assert.match(rows['activity-github'].innerHTML, /GitHub today \S @octocat/);
+    assert.match(rows['activity-gitlab'].innerHTML, /class="activity-error">glab is not logged in</);
+});
+
+test('activity that arrives after the code host changed is dropped', async () => {
+    const rows = { 'activity-github': { innerHTML: '' } };
+    let resolve;
+    const context = activityLoadContext(rows, () => new Promise(r => { resolve = r; }), 'github');
+
+    const load = context.loadActivityToday();
+    context.activityProvider = 'gitlab';
+    context.activityPollKey = 'gitlab|';
+    resolve({ username: 'octocat', total: 1 });
+    await load;
+    assert.equal(rows['activity-github'].innerHTML, '');
+});
+
+test('the GitLab host setting shows whenever GitLab activity is on', () => {
+    const row = { hidden: true };
+    const select = { value: '' };
+    const elements = { 'settings-gitlab-host-row': row, 'settings-activity-provider': select };
+    const context = { document: { getElementById: id => elements[id] || null } };
+    vm.runInNewContext(activityProvidersSource() + ['activityProviderIds', 'syncSettingsGitLabHostRow'].map(functionSource).join('\n'), context);
+
+    for (const [value, hidden] of [['', true], ['github', true], ['gitlab', false], ['both', false]]) {
+        select.value = value;
+        context.syncSettingsGitLabHostRow();
+        assert.equal(row.hidden, hidden, `activity_provider ${JSON.stringify(value)}`);
+    }
 });
 
 test('the AI usage box sits between coding activity and git status', () => {

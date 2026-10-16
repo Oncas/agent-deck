@@ -164,10 +164,11 @@ func gitlabAPIArgs(host, endpoint string, flags ...string) []string {
 	return args
 }
 
-// normalizeActivityProvider turns anything but a known code host into "none".
+// normalizeActivityProvider turns anything but a known code host, or "both",
+// into "none".
 func normalizeActivityProvider(raw string) string {
 	switch provider := strings.ToLower(strings.TrimSpace(raw)); provider {
-	case config.ActivityGitHub, config.ActivityGitLab:
+	case config.ActivityGitHub, config.ActivityGitLab, config.ActivityBoth:
 		return provider
 	default:
 		return ""

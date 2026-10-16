@@ -56,8 +56,9 @@
     let runtimeCapabilities = null;
     let providerSwitchInFlight = false;
     let dangerousPermissions = {};
-    // The code host whose activity the right panel shows ('' for none). Each
-    // id matches its backend route, GET /api/<id>/activity/today.
+    // The code hosts whose activity the right panel can show. Each id matches
+    // its backend route, GET /api/<id>/activity/today. activityProvider holds
+    // one of them, 'both', or '' for none.
     const ACTIVITY_PROVIDERS = {
         github: { name: 'GitHub', pullRequests: 'PR' },
         gitlab: { name: 'GitLab', pullRequests: 'MR' },
@@ -8995,7 +8996,13 @@ function readSettingsDangerousPermissions() {
 
     // --- Coding activity ---
     function normalizeActivityProvider(value) {
-        return Object.hasOwn(ACTIVITY_PROVIDERS, value) ? value : '';
+        return value === 'both' || Object.hasOwn(ACTIVITY_PROVIDERS, value) ? value : '';
+    }
+
+    // The code hosts an activity_provider setting shows, in display order.
+    function activityProviderIds(setting) {
+        if (setting === 'both') return Object.keys(ACTIVITY_PROVIDERS);
+        return Object.hasOwn(ACTIVITY_PROVIDERS, setting) ? [setting] : [];
     }
 
     function activityLevel(total) {
@@ -9007,7 +9014,7 @@ function readSettingsDangerousPermissions() {
     }
 
     function renderActivity(provider, data, error) {
-        const body = document.getElementById('activity-body');
+        const body = document.getElementById(`activity-${provider}`);
         const meta = ACTIVITY_PROVIDERS[provider];
         if (!body || !meta) return;
         if (error) {
@@ -9038,16 +9045,23 @@ function readSettingsDangerousPermissions() {
             `</div>`;
     }
 
+    // Each code host loads on its own, so one that fails, or a CLI that is not
+    // logged in, leaves the other's row intact.
     async function loadActivityToday() {
-        const provider = activityProvider;
-        if (!provider) return;
+        const providers = activityProviderIds(activityProvider);
+        if (!providers.length) return;
+        const key = activityPollKey;
         const btn = document.getElementById('activity-refresh');
         if (btn) btn.classList.add('loading');
         try {
-            const data = await fetchJSON(`/api/${provider}/activity/today`);
-            if (provider === activityProvider) renderActivity(provider, data);
-        } catch (err) {
-            if (provider === activityProvider) renderActivity(provider, null, err && err.message);
+            await Promise.all(providers.map(async provider => {
+                try {
+                    const data = await fetchJSON(`/api/${provider}/activity/today`);
+                    if (key === activityPollKey) renderActivity(provider, data);
+                } catch (err) {
+                    if (key === activityPollKey) renderActivity(provider, null, err && err.message);
+                }
+            }));
         } finally {
             if (btn) btn.classList.remove('loading');
         }
@@ -9059,14 +9073,19 @@ function readSettingsDangerousPermissions() {
         const section = document.getElementById('activity-section');
         if (!section) return;
         section.style.display = activityProvider ? '' : 'none';
-        const key = activityProvider === 'gitlab' ? `gitlab|${gitlabHost}` : activityProvider;
+        const providers = activityProviderIds(activityProvider);
+        const key = providers.includes('gitlab') ? `${activityProvider}|${gitlabHost}` : activityProvider;
         if (key === activityPollKey) return;
         activityPollKey = key;
         clearInterval(activityPollTimer);
         activityPollTimer = null;
         if (!key) return;
         const body = document.getElementById('activity-body');
-        if (body) body.innerHTML = '<div class="activity-loading">loading...</div>';
+        if (body) {
+            body.innerHTML = providers.map(provider =>
+                `<div class="activity-provider" id="activity-${provider}"><div class="activity-loading">loading...</div></div>`
+            ).join('');
+        }
         loadActivityToday();
         activityPollTimer = setInterval(loadActivityToday, 60000);
     }
@@ -9080,7 +9099,7 @@ function readSettingsDangerousPermissions() {
 
     function syncSettingsGitLabHostRow() {
         const row = document.getElementById('settings-gitlab-host-row');
-        if (row) row.hidden = document.getElementById('settings-activity-provider')?.value !== 'gitlab';
+        if (row) row.hidden = !activityProviderIds(document.getElementById('settings-activity-provider')?.value).includes('gitlab');
     }
 
     // --- AI usage ---

@@ -88,8 +88,8 @@ electron/
 - `GET /api/projects/{name}/diff` — File diff
 - `GET /api/github/activity/today`, `GET /api/gitlab/activity/today` - This
   user's contribution counts for today on GitHub or GitLab (merge requests are
-  counted as `pull_requests`). The `activity_provider` setting picks which one
-  the right panel shows.
+  counted as `pull_requests`). The `activity_provider` setting picks which one,
+  or both, the right panel shows.
 - `GET /api/claude/usage` / `GET /api/codex/usage` — Estimated API cost, conversations
   and messages for today, this week and this month, from `~/.claude/projects`
   (or `$CLAUDE_CONFIG_DIR`) and `~/.codex/sessions`. Cached for 5 minutes;
@@ -176,8 +176,10 @@ The activity tile shells out to the `gh` or `glab` CLI (`forgeCLI` in
 gets only its own login, host and proxy variables from the environment.
 `GET /api/capabilities` reports `gh` and `glab` under `dependencies`.
 
-`activity_provider` is `github`, `gitlab` or empty (off); a config that still
-has the old `show_github_activity: true` loads as `github`.
+`activity_provider` is `github`, `gitlab`, `both` or empty (off); a config that
+still has the old `show_github_activity: true` loads as `github`. With `both`
+the tile stacks a row per host, GitHub first, and each row loads and fails on
+its own, so a CLI that is not logged in leaves the other host's counts visible.
 
 GitHub: reads `gh api /users/<login>/events --paginate` and counts the events
 that land on the local day. The events feed takes no date filter and holds at

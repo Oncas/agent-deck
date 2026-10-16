@@ -161,6 +161,7 @@ func TestHandlePatchConfigSavesActivityProvider(t *testing.T) {
 		wantHost     string
 	}{
 		{"gitlab with pasted URL", "gitlab", "https://GitLab.example.com/", config.ActivityGitLab, "gitlab.example.com"},
+		{"github and gitlab", "both", "gitlab.example.com", config.ActivityBoth, "gitlab.example.com"},
 		{"off", "", "", "", ""},
 		{"unknown provider", "bitbucket", "", "", ""},
 	}

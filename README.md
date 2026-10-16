@@ -116,6 +116,9 @@ version, distro/version, desktop and X11/Wayland session in a
 - Read-only database browser for PostgreSQL, MySQL and SQLite.
 - Start and stop a project's Docker Compose stack.
 - Keeps the machine awake while agents are working.
+- Today's GitHub or GitLab activity, or both side by side, counted for the
+  account you logged in to `gh` or `glab` with. A self-managed GitLab works
+  too: set its host in Settings.
 - Claude Code and Codex usage: estimated API cost and messages for today, this
   week and this month, read from each CLI's local session logs. On a
   subscription it also shows the 5-hour and weekly limits; on an API key, the
@@ -134,6 +137,7 @@ Optional, per feature:
 | Feature | Needs |
 |---|---|
 | GitHub activity tile | [`gh`](https://cli.github.com), logged in with `gh auth login` |
+| GitLab activity tile | [`glab`](https://gitlab.com/gitlab-org/cli), logged in with `glab auth login` |
 | Start/stop a project's Docker stack | Docker with Compose v2 and a Compose file in that repo |
 | Saved database passwords | A system keyring (GNOME Keyring, KWallet, Keychain) |
 

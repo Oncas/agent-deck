@@ -21,8 +21,8 @@ type Config struct {
 	TerminalFontSize int                  `json:"terminal_font_size,omitempty"` // 0 = use frontend default
 	CLI              string               `json:"cli,omitempty"`                // "claude" (default), "cursor", "openai", "gemini", "opencode", "kimi", or custom integration id
 	CLIIntegrations  []CLIIntegration     `json:"cli_integrations,omitempty"`
-	// ActivityProvider picks the code host whose activity the right panel
-	// shows: ActivityGitHub, ActivityGitLab, or empty for none.
+	// ActivityProvider picks the code hosts whose activity the right panel
+	// shows: ActivityGitHub, ActivityGitLab, ActivityBoth, or empty for none.
 	ActivityProvider string `json:"activity_provider,omitempty"`
 	GitLabHost       string `json:"gitlab_host,omitempty"` // empty = glab's default
 	ShowClaudeUsage  bool   `json:"show_claude_usage,omitempty"`
@@ -43,6 +43,7 @@ type Config struct {
 const (
 	ActivityGitHub = "github"
 	ActivityGitLab = "gitlab"
+	ActivityBoth   = "both"
 )
 
 // UnmarshalJSON accepts the legacy main_directory and show_github_activity

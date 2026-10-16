@@ -1282,6 +1282,10 @@ html[data-theme="light"] .dirty-badge {
     min-width: 0;
 }
 
+.activity-provider + .activity-provider {
+    margin-top: 10px;
+}
+
 .activity-main {
     display: flex;
     align-items: center;

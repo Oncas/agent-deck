@@ -3,7 +3,6 @@ services:
     image: agentdeck-builder
     build:
       context: .
-      network: host
     network_mode: none
     entrypoint: ["/agentdeck"]
     command: ["--version"]
@@ -23,7 +22,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.electron
-      network: host
     environment:
       - DISPLAY=${DISPLAY}
       - LIBGL_ALWAYS_SOFTWARE=1
@@ -42,7 +40,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.electron-builder
-      network: host
     network_mode: none
     volumes:
       - ./dist:/dist

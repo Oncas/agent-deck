@@ -247,6 +247,7 @@ test('dangerous permission toggles are wired through settings and config', () =>
 	assert.match(appJs, /function remapDangerousPermissions/);
 	assert.match(saveSection, /const cliTransition = buildCLITransition/);
 	assert.match(appJs, /const migratedPaneCLI = migrateTerminalCLIs\(cliTransition\)/);
+	assert.match(saveSection, /workspaceCLIPatches\(workspaces, cliTransition\)/);
 	assert.match(appJs, /function buildTabLayoutsPayload\(cliTransition = null\)/);
 	assert.match(appJs, /applyCLITransition\(t\.cli, cliTransition\)/);
 	assert.match(appJs, /function saveTabsNow\(cliTransition = null\)/);
@@ -283,6 +284,10 @@ test('custom CLI transitions compose rename and removal state', () => {
 			renames: [{ from: 'old-cli', to: 'new-cli' }],
 		});
 		assert.equal(applyCLITransition('old-cli', transition), 'new-cli');
+		assert.deepEqual(
+			workspaceCLIPatches([{ id: 'a', cli: 'old-cli' }, { id: 'b', cli: 'shell' }, { id: 'c', cli: '' }], transition),
+			[{ id: 'a', cli: 'new-cli' }],
+		);
 		assert.deepEqual(
 			remapDangerousPermissions(
 				{ 'old-cli': true },

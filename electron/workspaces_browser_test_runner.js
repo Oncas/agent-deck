@@ -1,11 +1,13 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
-const os = require('node:os');
 const path = require('node:path');
 const { app, BrowserWindow } = require('electron');
 
 app.disableHardwareAcceleration();
+const artifacts = path.join(__dirname, '..', '.agentdeck', 'ui-tests', 'workspaces');
+fs.mkdirSync(artifacts, { recursive: true });
+app.setPath('userData', path.join(artifacts, 'profile'));
 const staticDir = path.join(__dirname, '..', 'cmd', 'agentdeck', 'static');
 const config = { scan_paths: ['/projects'], cli: 'claude', open_tabs: [], active_tab: '', tab_layouts: {}, workspaces: [] };
 const requests = [];
@@ -14,6 +16,7 @@ let nextID = 0;
 // Exercise the real HTML, app.js, xterm, and Monaco without launching AI CLIs.
 const transportFixture = `
 window.__workspaceTest = { sockets: [], errors: [] };
+window.electronSelectFolder = async () => ({ ok: true, path: '/folders/plain terminal' });
 window.addEventListener('error', event => window.__workspaceTest.errors.push(event.message));
 window.addEventListener('unhandledrejection', event => window.__workspaceTest.errors.push(String(event.reason)));
 window.WebSocket = class {
@@ -179,7 +182,7 @@ app.whenReady().then(async () => {
         await window.loadURL(url);
         await wait(`document.querySelectorAll('.workspace-tab').length === 2 && document.getElementById('workspace-project-select').value === 'org/b' && document.querySelector('.terminal-wrapper.active .terminal-provider-select')?.value === 'openai'`);
         const screenshot = await window.webContents.capturePage();
-        fs.writeFileSync(path.join(os.tmpdir(), 'agentdeck-workspaces.png'), screenshot.toPNG());
+        fs.writeFileSync(path.join(artifacts, 'workspace.png'), screenshot.toPNG());
         await click('workspace-manage-btn');
         await click('workspace-delete');
         await wait(`document.getElementById('app-dialog-modal').style.display !== 'none'`);
@@ -193,6 +196,44 @@ app.whenReady().then(async () => {
         await wait(`document.getElementById('terminal-container').classList.contains('split-layout') && document.querySelectorAll('.terminal-wrapper.active').length === 2`);
         await evaluate(`document.querySelector('.workspace-tab').click()`);
         await wait(`!document.getElementById('terminal-container').classList.contains('split-layout') && document.querySelectorAll('.terminal-wrapper.active').length === 1`);
+
+        // A folder terminal starts as a shell, with no project selection needed.
+        await click('open-terminal-btn');
+        await wait(`document.querySelector('.workspace-tab.active')?.textContent.includes('plain terminal') && document.querySelector('.terminal-wrapper.active .terminal-provider-select')?.value === 'shell'`);
+        const terminal = config.workspaces.find(workspace => workspace.name === 'plain terminal');
+        assert.equal(terminal.working_directory, '/folders/plain terminal');
+        assert.equal(terminal.cli, 'shell');
+        assert.deepEqual(terminal.projects, []);
+        assert.ok(requests.some(request => request.route === '/api/workspaces/' + terminal.id + '/terminal/start' && request.body.cli === 'shell'));
+        assert.equal(await evaluate(`document.getElementById('workspace-project-select').disabled`), true);
+
+        // The selected launch mode survives agent switches, tab closure, and reload.
+        for (const cli of ['openai', 'shell']) {
+            await evaluate(`(() => { const select = document.querySelector('.terminal-wrapper.active .terminal-provider-select'); select.value = '${cli}'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+            await wait(`document.querySelector('.terminal-wrapper.active .terminal-provider-select')?.value === '${cli}' && !document.querySelector('.terminal-wrapper.active .terminal-provider-select')?.disabled`);
+            assert.equal(terminal.cli, cli);
+        }
+        await evaluate(`document.querySelector('.terminal-tab.active .tab-close').click()`);
+        await evaluate(`Array.from(document.querySelectorAll('.workspace-open')).find(button => button.textContent === 'plain terminal').click()`);
+        await wait(`document.querySelector('.workspace-tab.active')?.textContent.includes('plain terminal') && document.querySelector('.terminal-wrapper.active .terminal-provider-select')?.value === 'shell'`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await window.loadURL(url);
+        await wait(`document.querySelector('.workspace-tab.active')?.textContent.includes('plain terminal') && document.querySelector('.terminal-wrapper.active .terminal-provider-select')?.value === 'shell'`);
+        for (const width of [480, 768, 1440, 1920]) {
+            window.setSize(width, 980);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            fs.writeFileSync(path.join(artifacts, 'terminal-' + width + '.png'), (await window.webContents.capturePage()).toPNG());
+        }
+        window.setSize(1440, 980);
+
+        // Browser/manual entry uses the same shell mode and derives the name.
+        await evaluate(`delete window.electronSelectFolder`);
+        await click('open-terminal-btn');
+        await wait(`document.getElementById('workspace-modal-title').textContent === 'New terminal'`);
+        await evaluate(`document.getElementById('workspace-folder').value = '/folders/manual';`);
+        await click('workspace-save');
+        await wait(`document.querySelector('.workspace-tab.active')?.textContent.includes('manual') && document.querySelector('.terminal-wrapper.active .terminal-provider-select')?.value === 'shell'`);
+        assert.equal(config.workspaces.find(workspace => workspace.name === 'manual').cli, 'shell');
         assert.deepEqual(await evaluate('window.__workspaceTest.errors'), []);
         process.stdout.write('WORKSPACE_BROWSER_RESULT ok\n');
         server.close();

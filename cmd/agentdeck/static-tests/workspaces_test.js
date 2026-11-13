@@ -257,8 +257,11 @@ test('Shift-clicking rendered project rows ticks a range and updates the count',
 
 test('workspace workflow works in the rendered application', { timeout: 60000 }, async t => {
     const repoRoot = path.join(__dirname, '..', '..', '..');
-    const binary = path.join(repoRoot, 'electron', 'node_modules', '.bin', 'electron');
-    if (!fs.existsSync(binary)) {
+    const binary = [
+        path.join(repoRoot, 'electron', 'node_modules', '.bin', 'electron'),
+        path.join(repoRoot, 'electron', 'dist', 'electron'),
+    ].find(candidate => fs.existsSync(candidate));
+    if (!binary) {
         t.skip('Electron is not installed');
         return;
     }

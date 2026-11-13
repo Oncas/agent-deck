@@ -56,6 +56,63 @@ func patchTestWorkspace(t *testing.T, api *apiHandler, id string, patch any) *ht
 	return rec
 }
 
+func TestShellWorkspaceStartsInFolderAndRemembersItsMode(t *testing.T) {
+	api, path := workspaceTestAPI(t)
+	folder := t.TempDir()
+	rec := httptest.NewRecorder()
+	api.handleCreateWorkspace(rec, newJSONRequest(t, http.MethodPost, "/api/workspaces", map[string]any{
+		"name": "Plain terminal", "working_directory": folder, "cli": "shell", "projects": []string{},
+	}))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create shell workspace = %d: %s", rec.Code, rec.Body.String())
+	}
+	var ws config.Workspace
+	if err := json.Unmarshal(rec.Body.Bytes(), &ws); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil || len(loaded.Workspaces) != 1 || loaded.Workspaces[0].CLI != "shell" {
+		t.Fatalf("shell mode was not saved: %+v, %v", loaded, err)
+	}
+	api.cfg = loaded
+	session, err := api.startWorkspaceSession(ws.ID, 80, 24, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.CLI() != "shell" {
+		t.Fatalf("session CLI = %q, want shell", session.CLI())
+	}
+	if _, err := session.Write([]byte("printf '\\n%s:%s\\n' shell-ready \"$PWD\"\n")); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for !strings.Contains(session.GetOutput(), "shell-ready:"+folder) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	output := session.GetOutput()
+	if !strings.Contains(output, "shell-ready:"+folder) || strings.Contains(output, "workspace-ready") || strings.Contains(output, "fatal:") {
+		t.Fatalf("shell did not run in its folder without Git or an agent: %q", output)
+	}
+	if rec := patchTestWorkspace(t, api, ws.ID, map[string]any{"projects": []string{"org/a"}}); rec.Code != http.StatusOK {
+		t.Fatal(rec.Body.String())
+	}
+	if api.manager.Get(workspaceSessionKey(ws.ID)) != session || !session.IsAlive() {
+		t.Fatal("tracking a project replaced the shell")
+	}
+	if rec := patchTestWorkspace(t, api, ws.ID, map[string]string{"cli": "workspace-test"}); rec.Code != http.StatusOK {
+		t.Fatal(rec.Body.String())
+	}
+	loaded, err = config.Load(path)
+	if err != nil || loaded.Workspaces[0].CLI != "workspace-test" {
+		t.Fatal("updated terminal choice was not saved")
+	}
+	api.manager.Remove(workspaceSessionKey(ws.ID))
+	agent, err := api.startWorkspaceSession(ws.ID, 80, 24, "", false)
+	if err != nil || agent.CLI() != "workspace-test" {
+		t.Fatalf("reopening did not use the saved agent: %v", err)
+	}
+}
+
 func TestWorkspaceTrackingChangesPreserveLiveSession(t *testing.T) {
 	api, path := workspaceTestAPI(t)
 	ws := createTestWorkspace(t, api)

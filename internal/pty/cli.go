@@ -35,6 +35,8 @@ func StartCommandWithOptions(cli string, dangerous bool, options StartOptions) s
 	}
 
 	switch normalizeBuiltinCLI(cli) {
+	case "shell":
+		return ""
 	case "opencode":
 		command := "opencode"
 		if options.ResumeLast {
@@ -99,6 +101,9 @@ func shellQuote(s string) string {
 func JobCommand(cli string, dangerousPermissions map[string]bool, quotedPrompt string, integrations []CLIIntegration) (string, error) {
 	integrationsByID := cliIntegrationMap(integrations)
 	cli = NormalizeCLI(cli, integrationsByID)
+	if cli == "shell" {
+		return "", fmt.Errorf("shell sessions have no agent command for jobs")
+	}
 	if _, ok := integrationForCLI(cli, integrationsByID); ok {
 		return "", fmt.Errorf("custom CLI %q has no non-interactive mode for jobs", cli)
 	}
@@ -158,7 +163,7 @@ func normalizeCLI(cli string) string {
 func normalizeBuiltinCLI(cli string) string {
 	id := strings.TrimSpace(cli)
 	switch id {
-	case "cursor", "openai", "gemini", "opencode", "kimi", "claude":
+	case "cursor", "openai", "gemini", "opencode", "kimi", "claude", "shell":
 		return id
 	default:
 		return "claude"
@@ -179,7 +184,7 @@ func integrationForCLI(cli string, integrations map[string]CLIIntegration) (CLII
 
 func IsBuiltinCLI(cli string) bool {
 	switch strings.TrimSpace(cli) {
-	case "claude", "cursor", "openai", "gemini", "opencode", "kimi":
+	case "claude", "cursor", "openai", "gemini", "opencode", "kimi", "shell":
 		return true
 	default:
 		return false

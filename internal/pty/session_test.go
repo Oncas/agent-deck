@@ -27,6 +27,18 @@ func TestSessionStartCommandCanPullFastForwardOnlyBeforeCLI(t *testing.T) {
 	}
 }
 
+func TestShellSessionNeverRunsStartupCommands(t *testing.T) {
+	if got := sessionStartCommand("shell", true, StartOptions{ResumeLast: true, StartupGitPullFFOnly: true}); got != "" {
+		t.Fatalf("shell startup command = %q, want none", got)
+	}
+	if NormalizeCLI("shell", nil) != "shell" || !IsBuiltinCLI("shell") {
+		t.Fatal("shell mode was resolved as an agent")
+	}
+	if _, err := JobCommand("shell", nil, "'prompt'", nil); err == nil {
+		t.Fatal("shell mode was accepted as a scheduled agent")
+	}
+}
+
 func TestSkipStartupGitPullPreservesProviderOptions(t *testing.T) {
 	for _, cli := range []string{"claude", "cursor", "openai", "gemini", "custom"} {
 		options := StartOptions{

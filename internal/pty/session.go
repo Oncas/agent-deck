@@ -78,6 +78,9 @@ func (s *Session) StartWithOptions(cols, rows uint16, cli string, dangerous bool
 // immune to FETCH_HEAD: a background fetcher appending to it leaves the branch
 // listed twice, which pull reads as two merge heads and refuses as "divergent".
 func sessionStartCommand(cli string, dangerous bool, options StartOptions) string {
+	if cli == "shell" {
+		return ""
+	}
 	if options.SkipStartupGitPull {
 		return StartCommandWithOptions(cli, dangerous, options)
 	}
@@ -95,7 +98,11 @@ func (s *Session) StartWithCommand(cols, rows uint16, command string) error {
 	if shell == "" {
 		shell = "bash"
 	}
-	s.cmd = exec.Command(shell, "-l", "-i", "-c", command)
+	args := []string{"-l", "-i"}
+	if command != "" {
+		args = append(args, "-c", command)
+	}
+	s.cmd = exec.Command(shell, args...)
 	s.cmd.Dir = s.ProjectPath
 	s.cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 

@@ -481,6 +481,17 @@ function migrateTerminalCLIs(transition) {
 	return changed;
 }
 
+function workspaceCLIPatches(list, transition) {
+	if (!transition || !transition.changed) return [];
+	const patches = [];
+	list.forEach(workspace => {
+		if (!workspace.cli) return;
+		const cli = applyCLITransition(workspace.cli, transition);
+		if (cli !== workspace.cli) patches.push({ id: workspace.id, cli });
+	});
+	return patches;
+}
+
 function capableProviders() {
 	const deps = runtimeCapabilities && runtimeCapabilities.dependencies;
 	if (!deps) return [];
@@ -9009,6 +9020,13 @@ function readSettingsDangerousPermissions() {
 
 	applyConfigState(saved);
 	const migratedPaneCLI = migrateTerminalCLIs(cliTransition);
+	for (const patch of workspaceCLIPatches(workspaces, cliTransition)) {
+		try {
+			storeWorkspace(await saveWorkspacePatch(patch.id, { cli: patch.cli }));
+		} catch (err) {
+			showToast('Workspace terminal choice not updated', compactErrorMessage(err && err.message), 'error', 4200);
+		}
+	}
 	settingsPendingCLIRenames = [];
 	setThemeMode(saved.theme || theme);
 	await loadRuntimeCapabilities();

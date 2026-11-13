@@ -37,6 +37,11 @@
     overflow-y: auto;
 }
 
+#open-terminal-btn {
+    width: 100%;
+    text-align: left;
+}
+
 .workspace-item {
     display: flex;
     align-items: center;

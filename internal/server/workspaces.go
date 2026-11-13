@@ -146,6 +146,9 @@ func (a *apiHandler) handleCreateWorkspace(w http.ResponseWriter, r *http.Reques
 	ws.WorkingDirectory = dir
 	normalizeWorkspaceSelection(&ws)
 	if _, err := a.updateConfig(func(next *config.Config) {
+		if ws.CLI != "" {
+			ws.CLI = normalizeConfigCLI(ws.CLI, next.CLIIntegrations)
+		}
 		next.Workspaces = append(next.Workspaces, ws)
 	}); err != nil {
 		writeWorkspaceError(w, err)
@@ -162,6 +165,7 @@ func (a *apiHandler) handleUpdateWorkspace(w http.ResponseWriter, r *http.Reques
 		Name          *string   `json:"name"`
 		Projects      *[]string `json:"projects"`
 		ActiveProject *string   `json:"active_project"`
+		CLI           *string   `json:"cli"`
 	}
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields() // In particular, the session folder is fixed.
@@ -200,6 +204,9 @@ func (a *apiHandler) handleUpdateWorkspace(w http.ResponseWriter, r *http.Reques
 		}
 		if patch.Name != nil {
 			ws.Name = *patch.Name
+		}
+		if patch.CLI != nil {
+			ws.CLI = normalizeConfigCLI(*patch.CLI, next.CLIIntegrations)
 		}
 		if patch.Projects != nil {
 			ws.Projects = slices.Clone(*patch.Projects)
@@ -246,6 +253,9 @@ func (a *apiHandler) startWorkspaceSession(id string, cols, rows uint16, cli str
 	var tracked []string
 	if ws != nil {
 		folder, tracked = ws.WorkingDirectory, slices.Clone(ws.Projects)
+		if cli == "" {
+			cli = ws.CLI
+		}
 	}
 	a.mu.RUnlock()
 	if ws == nil {

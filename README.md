@@ -92,6 +92,10 @@ version, distro/version, desktop and X11/Wayland session in a
   to what is tracked reach a running session when it restarts. Create one from
   **Workspaces -> + New** in the sidebar and change what it tracks with
   **Manage**.
+- **Plain terminals** in any folder, including folders without a Git repository.
+  Choose **Workspaces -> Open terminal...** to start your shell. The terminal
+  menu switches between Shell and an agent; the folder and choice are saved.
+  Reopening the app starts a fresh shell. Track projects later with **Manage**.
 - **Restart and resume** a session's last conversation, for CLIs that support it.
 - **Live status** per session (working, waiting for permission, idle, done but
   not looked at), with desktop notifications.

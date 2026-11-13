@@ -85,6 +85,7 @@ type Workspace struct {
 	ID               string   `json:"id"`
 	Name             string   `json:"name"`
 	WorkingDirectory string   `json:"working_directory"`
+	CLI              string   `json:"cli,omitempty"`
 	Projects         []string `json:"projects"`
 	ActiveProject    string   `json:"active_project"`
 }

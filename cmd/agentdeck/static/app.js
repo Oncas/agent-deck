@@ -223,7 +223,7 @@ function normalizeCLIIntegration(integration) {
 	if (!integration || typeof integration !== 'object') return null;
 	const id = String(integration.id || '').trim();
 	const command = String(integration.command || '').trim();
-	if (!id || !command) return null;
+	if (!id || id === 'shell' || !command) return null;
 	const name = String(integration.name || '').trim() || id;
 	return {
 		id,
@@ -380,6 +380,7 @@ refreshAIProviders([]);
 
     function normalizeCLI(cli) {
         const value = cli || currentCLI || 'claude';
+        if (value === 'shell') return value;
         return AI_PROVIDER_BY_VALUE[value] ? value : 'claude';
     }
 
@@ -447,6 +448,7 @@ function buildCLITransition(options = {}) {
 
 function applyCLITransition(value, transition) {
 	const raw = String(value || '').trim();
+	if (raw === 'shell') return raw;
 	const entry = transition && transition.entries ? transition.entries.get(raw) : null;
 	const candidate = entry ? entry.to : raw;
 	if (candidate && transition && transition.nextProviderValues && transition.nextProviderValues.has(candidate)) return candidate;
@@ -487,6 +489,7 @@ function capableProviders() {
 
 function resolveRuntimeCLI(cli) {
 	const normalized = normalizeCLI(cli);
+	if (normalized === 'shell') return normalized;
 	if (isCustomCLIProvider(normalized)) return normalized;
 	const capable = capableProviders();
 	if (capable.length === 0) return normalized;
@@ -529,7 +532,8 @@ function renderTerminalProviderSwitcher() {
 		if (!pane || !pane.providerWrap || !pane.providerSelect) return;
 		const isActivePane = !!activeTabKey && pane.tabKey === activeTabKey;
 		const paneValue = pane.cli ? normalizeCLI(pane.cli) : resolveRuntimeCLI(currentCLI);
-		const providers = providerOptionsWithSelection(paneValue, baseProviders);
+		const providers = [...providerOptionsWithSelection(paneValue, baseProviders)];
+		if (isWorkspaceTab(pane.tabKey)) providers.unshift({ value: 'shell', shortLabel: 'Shell' });
 		const visible = !overviewActive && activeTab && providers.length > 1;
 		const shouldShow = visible && isActivePane && !pane.kind;
 		const nextDisplay = shouldShow ? 'flex' : 'none';
@@ -609,6 +613,13 @@ function renderTerminalProviderSwitcher() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session: sessionKey, cli })
             });
+            if (isWorkspaceTab(tabKey)) {
+                try {
+                    storeWorkspace(await saveWorkspacePatch(tabKey.slice('workspace:'.length), { cli }));
+                } catch (err) {
+                    showToast('Terminal choice not saved', compactErrorMessage(err && err.message), 'error', 4200);
+                }
+            }
             createTerminal(sessionKey, { tabKey, cli, insertBeforeEl });
             if (paneIndex >= 0) {
                 const state = ensureTabState(tabKey);
@@ -2487,7 +2498,7 @@ function applyDatabaseState(data) {
             renderTabs();
             return;
         }
-        const cli = normalizeCLI(options.initialCLI || currentCLI);
+        const cli = normalizeCLI(workspace.cli || options.initialCLI || currentCLI);
         if (getPaneKeys(tabKey).length === 0) {
             try {
                 await fetchJSON(terminalAPIBase(tabKey) + '/terminal/start', {
@@ -2611,21 +2622,56 @@ function applyDatabaseState(data) {
         updateWorkspaceSelectedCount();
     }
 
-    async function openWorkspaceDialog(id = '') {
+    async function openTerminalFolder() {
+        if (workspaceSaving) return;
+        if (typeof window.electronSelectFolder !== 'function') {
+            return openWorkspaceDialog('', 'shell');
+        }
+        const folder = await selectDirectory({ title: 'Open terminal in folder' });
+        if (!folder) return;
+        workspaceSaving = true;
+        try {
+            const saved = await fetchJSON('/api/workspaces', {
+                method: 'POST',
+                timeoutMs: CONFIG_SAVE_TIMEOUT_MS,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: folder.replace(/\/+$/, '').split('/').pop() || folder,
+                    working_directory: folder, cli: 'shell', projects: [], active_project: '',
+                }),
+            });
+            storeWorkspace(saved);
+            renderWorkspaceList();
+            await switchProject('workspace:' + saved.id);
+        } catch (err) {
+            showToast('Could not open terminal', compactErrorMessage(err && err.message), 'error', 4200);
+        } finally {
+            workspaceSaving = false;
+        }
+    }
+
+    async function openWorkspaceDialog(id = '', cli = '') {
         if (workspaceSaving) return;
         const workspace = workspaces.find(item => item.id === id);
         workspaceEditingID = workspace ? id : '';
         workspaceDraftProjects = new Set(workspace?.projects || []);
         workspaceChoiceAnchor = null;
         const modal = document.getElementById('workspace-modal');
-        document.getElementById('workspace-modal-title').textContent = workspace ? 'Manage workspace' : 'New workspace';
+        modal.dataset.cli = workspace?.cli || cli;
+        const shell = modal.dataset.cli === 'shell';
+        document.getElementById('workspace-modal-title').textContent = workspace ? 'Manage workspace' : shell ? 'New terminal' : 'New workspace';
         document.getElementById('workspace-name').value = workspace?.name || '';
+        document.getElementById('workspace-name').required = !shell;
+        document.getElementById('workspace-name').placeholder = shell ? 'Optional - defaults to folder name' : 'e.g. Checkout redesign';
+        document.getElementById('workspace-session-note').textContent = shell
+            ? 'A plain shell starts in this folder. Tracking projects is optional; use the terminal menu to switch to an agent.'
+            : 'One AI session starts in this folder. Claude can also use every tracked project, wherever it lives; changes to tracking reach it when the session restarts.';
         const folder = document.getElementById('workspace-folder');
         folder.value = workspace?.working_directory || settingsScanPaths[0] || '';
         folder.readOnly = !!workspace;
         document.getElementById('workspace-folder-browse').disabled = !!workspace;
         document.getElementById('workspace-delete').style.display = workspace ? '' : 'none';
-        document.getElementById('workspace-save').textContent = workspace ? 'Save' : 'Create workspace';
+        document.getElementById('workspace-save').textContent = workspace ? 'Save' : shell ? 'Open terminal' : 'Create workspace';
         document.getElementById('workspace-error').textContent = '';
         document.getElementById('workspace-project-filter').value = '';
         modal.style.display = 'flex';
@@ -2661,9 +2707,11 @@ function applyDatabaseState(data) {
         ev.preventDefault();
         if (workspaceSaving || workspaceEditingID === null) return;
         const id = workspaceEditingID;
-        const name = document.getElementById('workspace-name').value.trim();
+        let name = document.getElementById('workspace-name').value.trim();
         const tracked = [...workspaceDraftProjects];
         const folder = document.getElementById('workspace-folder').value.trim();
+        const cli = document.getElementById('workspace-modal').dataset.cli || '';
+        if (!name && cli === 'shell') name = folder.replace(/\/+$/, '').split('/').pop() || folder;
         if (!name || (!id && !folder)) {
             document.getElementById('workspace-error').textContent = 'Enter a name and session folder.';
             return;
@@ -2676,7 +2724,7 @@ function applyDatabaseState(data) {
                 method: 'POST',
                 timeoutMs: CONFIG_SAVE_TIMEOUT_MS,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, working_directory: folder, projects: tracked, active_project: tracked[0] || '' }),
+                body: JSON.stringify({ name, working_directory: folder, cli, projects: tracked, active_project: tracked[0] || '' }),
             });
             storeWorkspace(saved);
             workspaceSaving = false;
@@ -2722,6 +2770,7 @@ function applyDatabaseState(data) {
     }
 
     function initWorkspaces() {
+        document.getElementById('open-terminal-btn')?.addEventListener('click', openTerminalFolder);
         document.getElementById('new-workspace-btn')?.addEventListener('click', () => openWorkspaceDialog());
         document.getElementById('workspace-manage-btn')?.addEventListener('click', () => {
             const workspace = workspaceForTab();
@@ -7934,7 +7983,7 @@ function readSettingsCLIIntegrationForm() {
 	const command = (commandInput?.value || '').trim();
 	if (!id) throw new Error('Integration id is required.');
 	if (!/^[A-Za-z0-9_-]+$/.test(id)) throw new Error('Integration id can use letters, numbers, underscores, and hyphens.');
-	if (BUILT_IN_AI_PROVIDERS.some(provider => provider.value === id)) throw new Error(`Integration id "${id}" is reserved by a built-in CLI.`);
+	if (id === 'shell' || BUILT_IN_AI_PROVIDERS.some(provider => provider.value === id)) throw new Error(`Integration id "${id}" is reserved by a built-in CLI.`);
 	if (!command) throw new Error('Integration command is required.');
 	return {
 		id,
@@ -13968,6 +14017,7 @@ function renderJobLogText(container) {
             { id: 'overview.refresh', title: 'Overview: Refresh', subtitle: 'Reload workspace health', run: () => overviewActive ? loadOverview() : showOverview() },
             { id: 'overview.pullAll', title: 'Overview: Pull all', subtitle: 'Run git pull for every project', run: () => pullAllProjects() },
             { id: 'workspace.create', title: 'Workspace: New', subtitle: 'One AI session with several tracked projects', run: () => openWorkspaceDialog() },
+            { id: 'terminal.openFolder', title: 'Open terminal...', subtitle: 'Start a plain shell in any folder', run: () => openTerminalFolder() },
             { id: 'app.rescanProjects', title: 'Projects: Rescan', subtitle: 'Find newly checked-out repositories', run: () => rescanProjects() },
             { id: 'app.openSettings', title: 'Open settings', subtitle: 'Projects, capabilities, and preferences', run: () => openSettings() },
             { id: 'app.openShortcuts', title: 'Open shortcuts', subtitle: 'Keyboard shortcut list', run: () => openShortcutsModal() },
